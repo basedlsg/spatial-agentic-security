@@ -1,0 +1,5 @@
+scenario: underbudget
+agent_count: 8
+fragment_size: 16
+attempts: 10
+seed: 1337

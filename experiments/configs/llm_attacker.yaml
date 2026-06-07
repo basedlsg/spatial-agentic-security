@@ -1,0 +1,6 @@
+scenario: llm_attacker_placeholder
+agent_count: 8
+fragment_size: 16
+attempts: 0
+seed: 1337
+note: Future Inspect AI or promptfoo harness; no model calls in USAG v1.

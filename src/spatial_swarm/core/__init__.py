@@ -1,0 +1,1 @@
+"""Core swarm objects."""
