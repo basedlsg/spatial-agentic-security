@@ -27,17 +27,19 @@ class RandomFakeAgent:
         self.signing_key = SigningKey(hash_bytes("fake-agent-key", seed, agent_id)[:32])
 
     def packet(self, gateway: Gateway, message: FrozenMessage, challenge: Challenge) -> ProofPacket:
-        registration = gateway.registry.require(self.agent_id)
+        registration = gateway.registry.get(self.agent_id)
         rng = random.Random(self.seed)
+        fragment_size = registration.fragment.size if registration else 16
+        fragment_commitment = registration.fragment_commitment if registration else "0" * 64
         coords = [
             [rng.randrange(gateway.grid.p), rng.randrange(gateway.grid.p), rng.randrange(gateway.grid.p)]
-            for _ in range(registration.fragment.size)
+            for _ in range(fragment_size)
         ]
         response = FragmentResponse(
             agent_id=self.agent_id,
             message_id=message.message_id,
             challenge_id=challenge.challenge_id,
-            fragment_commitment=registration.fragment_commitment,
+            fragment_commitment=fragment_commitment,
             coords=coords,
         )
         encrypted = SealedBox(gateway.private_key.public_key).encrypt(

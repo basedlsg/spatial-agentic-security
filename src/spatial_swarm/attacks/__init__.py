@@ -7,6 +7,11 @@ from spatial_swarm.attacks.overbudget_agent import OverBudgetAgent, UnderBudgetA
 from spatial_swarm.attacks.replay_agent import ReplayAgent
 from spatial_swarm.attacks.slow_agent import SlowAgent
 from spatial_swarm.attacks.stolen_piece_agent import StolenSinglePieceAgent
+from spatial_swarm.attacks.valid_signature_agent import (
+    ValidSignatureWrongGeometryAgent,
+    ValidSignatureWrongMessageHashAgent,
+    ValidSignatureWrongTransformAgent,
+)
 from spatial_swarm.attacks.wrong_message_agent import WrongMessageAgent
 
 __all__ = [
@@ -18,5 +23,8 @@ __all__ = [
     "SlowAgent",
     "StolenSinglePieceAgent",
     "UnderBudgetAgent",
+    "ValidSignatureWrongGeometryAgent",
+    "ValidSignatureWrongMessageHashAgent",
+    "ValidSignatureWrongTransformAgent",
     "WrongMessageAgent",
 ]

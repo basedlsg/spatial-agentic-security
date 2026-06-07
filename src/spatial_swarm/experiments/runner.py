@@ -14,6 +14,11 @@ from spatial_swarm.attacks.overbudget_agent import OverBudgetAgent, UnderBudgetA
 from spatial_swarm.attacks.replay_agent import ReplayAgent
 from spatial_swarm.attacks.slow_agent import SlowAgent
 from spatial_swarm.attacks.stolen_piece_agent import PartialSwarmAgent, StolenSinglePieceAgent
+from spatial_swarm.attacks.valid_signature_agent import (
+    ValidSignatureWrongGeometryAgent,
+    ValidSignatureWrongMessageHashAgent,
+    ValidSignatureWrongTransformAgent,
+)
 from spatial_swarm.attacks.wrong_message_agent import WrongMessageAgent
 from spatial_swarm.core.gateway import Gateway
 from spatial_swarm.experiments.baselines import (
@@ -22,6 +27,7 @@ from spatial_swarm.experiments.baselines import (
     signature_only_sender,
     unanimous_signature,
 )
+from spatial_swarm.crypto.hashing import sha256_hex
 from spatial_swarm.experiments.metrics import (
     process_resource_use,
     summarize_results,
@@ -72,6 +78,70 @@ def run_fake_agent(agent_count: int, fragment_size: int, seed: int, logger: Opti
         "agent_002",
         {"type": "demo", "body": "fake replacement"},
         packet_provider=fake.replace_agent_packets,
+    )
+
+
+def run_unregistered_fake_agent(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    fake = RandomFakeAgent("agent_999", seed=seed + 42)
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "unregistered fake"},
+        packet_provider=lambda gateway, message, challenge: [fake.packet(gateway, message, challenge)],
+    )
+
+
+def run_valid_signature_wrong_geometry(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    attack = ValidSignatureWrongGeometryAgent("agent_004" if agent_count >= 4 else "agent_001", "agent_003")
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "valid signature wrong geometry"},
+        packet_provider=attack.replace_agent_packets,
+    )
+
+
+def run_valid_signature_wrong_transform(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    attack = ValidSignatureWrongTransformAgent("agent_004" if agent_count >= 4 else "agent_001", "agent_003")
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "valid signature wrong transform"},
+        packet_provider=attack.replace_agent_packets,
+    )
+
+
+def run_valid_signature_wrong_message_hash(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    attack = ValidSignatureWrongMessageHashAgent("agent_004" if agent_count >= 4 else "agent_001", "agent_003")
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "valid signature wrong message hash"},
+        packet_provider=attack.replace_agent_packets,
     )
 
 
@@ -187,6 +257,10 @@ SCENARIOS: dict[str, Scenario] = {
     "honest": run_honest,
     "missing": run_missing,
     "fake_agent": run_fake_agent,
+    "unregistered_fake_agent": run_unregistered_fake_agent,
+    "valid_signature_wrong_geometry": run_valid_signature_wrong_geometry,
+    "valid_signature_wrong_transform": run_valid_signature_wrong_transform,
+    "valid_signature_wrong_message_hash": run_valid_signature_wrong_message_hash,
     "replay": run_replay,
     "wrong_message": run_wrong_message,
     "duplicate": run_duplicate,
@@ -234,7 +308,8 @@ def run_experiment(
         "agent_count": agent_count,
         "fragment_size": fragment_size,
         "attempts": attempts,
-        "seed": seed,
+        "determinism_commitment": sha256_hex({"kind": "experiment_seed", "seed": seed}),
+        "secret_material_redacted": True,
     }
     write_yaml_like(run_dir / "config.yaml", config)
     write_environment(run_dir)
