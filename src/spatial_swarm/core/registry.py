@@ -27,7 +27,7 @@ class Registry:
         self.epoch = epoch
         self.state = SwarmState.ACTIVE
         self._registrations = {registration.agent_id: registration for registration in registrations}
-        self.original_agent_ids = tuple(sorted(self._registrations))
+        self.original_agent_ids = tuple(sorted(self._registrations, key=_agent_sort_key))
 
     def get(self, agent_id: str) -> Optional[AgentRegistration]:
         return self._registrations.get(agent_id)
@@ -58,3 +58,10 @@ class Registry:
         if agent_id and agent_id in self._registrations:
             self._registrations[agent_id].active = False
         self.state = SwarmState.COLLAPSED
+
+
+def _agent_sort_key(agent_id: str) -> tuple[str, int]:
+    prefix, _, suffix = agent_id.rpartition("_")
+    if suffix.isdigit():
+        return (prefix, int(suffix))
+    return (agent_id, -1)
