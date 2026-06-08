@@ -19,7 +19,7 @@ from spatial_swarm.geometry.fragment import generate_disjoint_fragments
 from spatial_swarm.protocol.challenge import Challenge, challenge_for_message
 from spatial_swarm.protocol.policies import estimate_envelope
 from spatial_swarm.protocol.proof_packet import ProofPacket
-from spatial_swarm.protocol.verifier import VerificationResult, Verifier
+from spatial_swarm.protocol.verifier import VerificationResult, Verifier, VerifierOptions
 
 
 PacketProvider = Callable[["Gateway", FrozenMessage, Challenge], Sequence[Union[ProofPacket, dict[str, Any]]]]
@@ -44,6 +44,7 @@ class Gateway:
         p: int = 257,
         timeout_ms: float = 50.0,
         logger: Optional[Any] = None,
+        verifier_options: Optional[VerifierOptions] = None,
     ) -> "Gateway":
         grid = FiniteGrid(p=p)
         epoch = Epoch(index=1).epoch_id
@@ -80,7 +81,7 @@ class Gateway:
             sidecars[agent_id] = sidecar
 
         registry = Registry(epoch=epoch, registrations=registrations)
-        verifier = Verifier(registry=registry, private_key=private_key)
+        verifier = Verifier(registry=registry, private_key=private_key, options=verifier_options)
         gateway = cls(
             registry=registry,
             sidecars=sidecars,

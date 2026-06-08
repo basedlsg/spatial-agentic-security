@@ -7,6 +7,7 @@ import os
 import platform
 import subprocess
 from datetime import datetime, timezone
+from hashlib import sha256
 from pathlib import Path
 from typing import Any, Iterable, Optional
 
@@ -47,10 +48,16 @@ class RunLogger:
 
 
 def write_environment(run_dir: Path) -> None:
+    lock_path = Path("uv.lock")
+    lock_hash = sha256(lock_path.read_bytes()).hexdigest() if lock_path.exists() else "missing"
     payload = {
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
         "python": platform.python_version(),
         "platform": platform.platform(),
+        "machine": platform.machine(),
+        "processor": platform.processor(),
         "cwd": os.getcwd(),
+        "uv_lock_sha256": lock_hash,
     }
     (run_dir / "environment.txt").write_text(
         "\n".join(f"{key}: {value}" for key, value in payload.items()) + "\n",
@@ -60,11 +67,20 @@ def write_environment(run_dir: Path) -> None:
 
 def write_git_commit(run_dir: Path) -> None:
     try:
-        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+        top_level = subprocess.check_output(
+            ["git", "rev-parse", "--show-toplevel"],
+            text=True,
+        ).strip()
+        commit = subprocess.check_output(["git", "-C", top_level, "rev-parse", "HEAD"], text=True).strip()
     except Exception:
+        top_level = os.getcwd()
         commit = "unknown"
     try:
-        status = subprocess.check_output(["git", "status", "--short"], text=True).strip()
+        rel_cwd = os.path.relpath(os.getcwd(), top_level)
+        status = subprocess.check_output(
+            ["git", "-C", top_level, "status", "--short", "--", rel_cwd],
+            text=True,
+        ).strip()
     except Exception:
         status = ""
     dirty = "true" if status else "false"

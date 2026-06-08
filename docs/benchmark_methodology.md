@@ -15,6 +15,38 @@ direct agent-to-agent communication = disabled
 retries = disabled
 ```
 
+## Benchmark Presets
+
+The CLI supports the reviewer-facing command form:
+
+```bash
+uv run spatial-swarm benchmark v0_2_matrix
+uv run spatial-swarm benchmark honest_1024
+uv run spatial-swarm benchmark attack_scale_1024
+uv run spatial-swarm benchmark baseline_matrix
+uv run spatial-swarm benchmark ablation_matrix
+uv run spatial-swarm benchmark fuzz_10000
+uv run spatial-swarm benchmark v0_3_focused_10000
+```
+
+Preset defaults:
+
+| Preset | Scenario/group | Agents | Attempts |
+| --- | --- | ---: | ---: |
+| `v0_2_matrix` | v0.2 attack matrix | 8 | 1,000 |
+| `honest_1024` | honest | 1,024 | 100 |
+| `attack_scale_1024` | 1024-agent attack-scale group | 1,024 | 100 |
+| `baseline_matrix` | baseline comparison | 8 | 1,000 |
+| `ablation_matrix` | verifier ablation comparison | 8 | 1,000 |
+| `fuzz_10000` | three fuzzer classes | 8 | 10,000 |
+| `v0_3_focused_10000` | focused 10,000-attempt matrix | 8 | 10,000 |
+
+Any preset can be overridden with explicit flags, for example:
+
+```bash
+uv run spatial-swarm benchmark baseline_matrix --attempts=10
+```
+
 ## Attempt Semantics
 
 One attempt is one proposed inter-agent message. A passing attempt means the gateway
@@ -67,6 +99,75 @@ geometry_checks_performed
 
 For successful honest messages, these counters describe work performed before release.
 
+## Baseline Modes
+
+v0.3 compares the same scenario labels against four gates:
+
+```text
+mode_0_no_gate
+mode_1_sender_signature_only
+mode_2_unanimous_signature_gate
+mode_3_usag_spatial_gate
+```
+
+The first three modes are deterministic baseline simulations. Signature modes use real
+Ed25519 signing and verification over message-bound payloads. They do not inspect spatial
+proof material. The fourth mode is the real USAG verifier running the same scenario
+implementation used by the attack matrix.
+
+For spatial-material attacks such as `valid_signature_wrong_geometry`, the baseline
+assumption is that ordinary signatures are valid and only the spatial material is wrong.
+This is intentional: it tests what the spatial layer adds after normal signature checks
+have already succeeded.
+
+## Ablation Modes
+
+v0.3 can run the attack matrix against weakened verifier options:
+
+```text
+usag_full
+usag_without_message_hash_binding
+usag_without_sender_receiver_binding
+usag_without_epoch_nonce_binding
+usag_without_proof_envelope_budget
+usag_without_geometry_check
+usag_without_signatures
+```
+
+Disabling one check does not guarantee an attack will pass. Later checks remain active
+unless that ablation disables them too. For example, removing the per-piece geometry check
+can move a wrong-geometry attack from `wrong_geometry` to `assembly_failed`; that is still
+useful evidence because it shows which layer terminated the round.
+
+## Fuzzing
+
+The deterministic packet fuzzer mutates:
+
+```text
+agent_id
+message_hash
+challenge_hash
+epoch
+signature
+encrypted payload
+proof commitment
+packet size
+coordinates
+packet order
+submission number
+timestamp
+wrong-nonce transform
+```
+
+Fuzzer runs track whether any malformed or replay-mutated packet set passes, where it
+fails, and whether the verifier crashes. A successful fuzz benchmark should report:
+
+```text
+0 malformed randomized attempts pass
+0 verifier crashes
+0 raw secrets logged
+```
+
 ## Latency
 
 Latency is verifier wall-clock time for one message round. It starts at verifier entry and
@@ -87,3 +188,17 @@ for the current platform.
 
 Report zero observed unauthorized passes as an observation under a stated configuration,
 not as impossibility.
+
+Generated artifacts include:
+
+```text
+commit hash
+project-scoped worktree dirty flag
+timestamp
+machine/platform
+Python version
+uv.lock SHA-256
+config
+metrics
+JSONL events
+```

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import platform
 import resource
 import statistics
@@ -78,10 +79,14 @@ def _latency_summary(values: list[float]) -> dict[str, float]:
     ordered = sorted(float(value) for value in values)
     return {
         "p50": statistics.median(ordered),
-        "p95": ordered[min(len(ordered) - 1, int(0.95 * (len(ordered) - 1)))],
-        "p99": ordered[min(len(ordered) - 1, int(0.99 * (len(ordered) - 1)))],
+        "p95": _percentile(ordered, 0.95),
+        "p99": _percentile(ordered, 0.99),
         "max": max(ordered),
     }
+
+
+def _percentile(ordered: list[float], percentile: float) -> float:
+    return ordered[min(len(ordered) - 1, math.ceil(percentile * len(ordered)) - 1)]
 
 
 def read_events(path: Path) -> list[dict[str, Any]]:

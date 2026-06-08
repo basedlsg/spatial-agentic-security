@@ -17,9 +17,10 @@ not start real LLM agents or containers.
 
 ```bash
 uv run --extra dev pytest
-uv run usag-run --scenario honest --agents 8 --fragment-size 16 --attempts 1
-uv run usag-run --scenario fake_agent --agents 8 --fragment-size 16 --attempts 1
-uv run usag-run --scenario scale_smoke --agents 1024 --fragment-size 16 --attempts 1
+uv run spatial-swarm benchmark v0_2_matrix --attempts=1
+uv run spatial-swarm benchmark baseline_matrix --attempts=1
+uv run spatial-swarm benchmark ablation_matrix --attempts=1
+uv run spatial-swarm benchmark fuzz_10000 --attempts=2
 ```
 
 Every run writes a timestamped directory under `runs/`:
@@ -52,7 +53,11 @@ not include raw fragments, private signing keys, or decrypted sidecar payloads.
 - strict fail-closed swarm collapse on any failure
 - adversaries for fake, replay, wrong-message, malformed, slow, duplicate, over-budget,
   stolen-fragment, and partial-swarm attacks
-- baseline simulations for direct, gateway-only, signature-only, unanimous-signature, and USAG
+- baseline comparison modes for no gate, sender-signature-only,
+  unanimous-signature, and USAG spatial gate
+- ablation modes that disable message binding, sender/receiver binding,
+  epoch/nonce binding, proof envelopes, geometry checks, or signatures
+- deterministic packet fuzzing for malformed packets, mixed packet sets, and replay mutations
 - reproducible JSONL experiment logs and generated metrics
 - pytest and Hypothesis coverage for protocol invariants
 
@@ -98,6 +103,9 @@ runs/            generated experiment artifacts
 ```bash
 uv run --extra dev pytest
 uv run usag-run --scenario run_all --agents 8 --fragment-size 16 --attempts 3
+uv run spatial-swarm benchmark honest_1024
+uv run spatial-swarm benchmark attack_scale_1024
+uv run spatial-swarm benchmark v0_3_focused_10000
 ```
 
 The project supports Python 3.9+ because the current local system Python is 3.9.6.

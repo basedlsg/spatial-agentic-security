@@ -74,10 +74,35 @@ class VerificationResult:
     events: list[VerificationEvent] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class VerifierOptions:
+    """Switches used by ablation experiments.
+
+    The default is the full USAG verifier. Disabling a switch removes only that
+    check; later checks may still fail the same packet.
+    """
+
+    bind_epoch: bool = True
+    bind_message_hash: bool = True
+    bind_challenge: bool = True
+    bind_response: bool = True
+    enforce_proof_envelope: bool = True
+    verify_signatures: bool = True
+    check_proof_commitment: bool = True
+    check_geometry: bool = True
+    check_assembly: bool = True
+
+
 class Verifier:
-    def __init__(self, registry: Registry, private_key: PrivateKey):
+    def __init__(
+        self,
+        registry: Registry,
+        private_key: PrivateKey,
+        options: Optional[VerifierOptions] = None,
+    ):
         self.registry = registry
         self.private_key = private_key
+        self.options = options or VerifierOptions()
         self._seen: set[tuple[str, str, str]] = set()
 
     def verify_round(
@@ -157,7 +182,8 @@ class Verifier:
                 try:
                     packet = ProofPacket.model_validate(raw_packet)
                 except ValidationError:
-                    return fail(FailureReason.MALFORMED_PACKET, "registration", raw_packet.get("agent_id"))
+                    raw_agent_id = raw_packet.get("agent_id") if isinstance(raw_packet, dict) else None
+                    return fail(FailureReason.MALFORMED_PACKET, "registration", raw_agent_id)
 
             agent_id = packet.agent_id
             registration = self.registry.get(agent_id)
@@ -175,21 +201,21 @@ class Verifier:
                     agent_id,
                     submission_number=packet.submission_number,
                 )
-            if packet.epoch != self.registry.epoch:
+            if self.options.bind_epoch and packet.epoch != self.registry.epoch:
                 return fail(
                     FailureReason.WRONG_EPOCH,
                     "epoch_binding",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
-            if packet.message_id != message.message_id:
+            if self.options.bind_message_hash and packet.message_id != message.message_id:
                 return fail(
                     FailureReason.WRONG_MESSAGE_HASH,
                     "message_binding",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
-            if packet.challenge_id != challenge.challenge_id:
+            if self.options.bind_challenge and packet.challenge_id != challenge.challenge_id:
                 return fail(
                     FailureReason.WRONG_CHALLENGE,
                     "challenge_binding",
@@ -218,23 +244,24 @@ class Verifier:
 
             size = packet_size_bytes(packet)
             proof_bytes_total += size
-            size_state = registration.envelope.validate_size(size)
-            if size_state == "over":
-                return fail(
-                    FailureReason.OVER_BUDGET,
-                    "proof_envelope",
-                    agent_id,
-                    proof_bytes=size,
-                    submission_number=packet.submission_number,
-                )
-            if size_state == "under":
-                return fail(
-                    FailureReason.UNDER_BUDGET,
-                    "proof_envelope",
-                    agent_id,
-                    proof_bytes=size,
-                    submission_number=packet.submission_number,
-                )
+            if self.options.enforce_proof_envelope:
+                size_state = registration.envelope.validate_size(size)
+                if size_state == "over":
+                    return fail(
+                        FailureReason.OVER_BUDGET,
+                        "proof_envelope",
+                        agent_id,
+                        proof_bytes=size,
+                        submission_number=packet.submission_number,
+                    )
+                if size_state == "under":
+                    return fail(
+                        FailureReason.UNDER_BUDGET,
+                        "proof_envelope",
+                        agent_id,
+                        proof_bytes=size,
+                        submission_number=packet.submission_number,
+                    )
             if packet.submitted_at_ms > registration.envelope.timeout_ms:
                 return fail(
                     FailureReason.LATE_PACKET,
@@ -243,15 +270,16 @@ class Verifier:
                     proof_bytes=size,
                     submission_number=packet.submission_number,
                 )
-            if not verify_payload(registration.verify_key, packet.signed_payload(), packet.signature):
-                return fail(
-                    FailureReason.WRONG_SIGNATURE,
-                    "signature",
-                    agent_id,
-                    proof_bytes=size,
-                    submission_number=packet.submission_number,
-                )
-            signatures_verified += 1
+            if self.options.verify_signatures:
+                if not verify_payload(registration.verify_key, packet.signed_payload(), packet.signature):
+                    return fail(
+                        FailureReason.WRONG_SIGNATURE,
+                        "signature",
+                        agent_id,
+                        proof_bytes=size,
+                        submission_number=packet.submission_number,
+                    )
+                signatures_verified += 1
 
             try:
                 encrypted = base64.b64decode(
@@ -270,12 +298,17 @@ class Verifier:
                     submission_number=packet.submission_number,
                 )
 
-            if (
-                response.agent_id != agent_id
-                or response.message_id != message.message_id
-                or response.challenge_id != challenge.challenge_id
-                or response.fragment_commitment != registration.fragment_commitment
-            ):
+            response_binding_failed = response.agent_id != agent_id
+            if self.options.bind_message_hash:
+                response_binding_failed = response_binding_failed or response.message_id != message.message_id
+            if self.options.bind_challenge:
+                response_binding_failed = response_binding_failed or response.challenge_id != challenge.challenge_id
+            if self.options.bind_response:
+                response_binding_failed = (
+                    response_binding_failed
+                    or response.fragment_commitment != registration.fragment_commitment
+                )
+            if response_binding_failed:
                 return fail(
                     FailureReason.RESPONSE_BINDING_FAILED,
                     "response_binding",
@@ -285,13 +318,17 @@ class Verifier:
                 )
 
             coords = response.coord_set()
+            expected_message_id = message.message_id if self.options.bind_message_hash else packet.message_id
+            expected_challenge_id = (
+                challenge.challenge_id if self.options.bind_challenge else packet.challenge_id
+            )
             expected_commitment = proof_commitment(
                 agent_id,
-                message.message_id,
-                challenge.challenge_id,
+                expected_message_id,
+                expected_challenge_id,
                 coords,
             )
-            if packet.proof_commitment != expected_commitment:
+            if self.options.check_proof_commitment and packet.proof_commitment != expected_commitment:
                 return fail(
                     FailureReason.WRONG_PROOF_COMMITMENT,
                     "commitment",
@@ -302,7 +339,7 @@ class Verifier:
 
             expected = challenge.transform.apply(registration.fragment.coords)
             geometry_checks_performed += 1
-            if coords != expected:
+            if self.options.check_geometry and coords != expected:
                 return fail(
                     FailureReason.WRONG_GEOMETRY,
                     "geometry",
@@ -331,7 +368,11 @@ class Verifier:
         if missing:
             return fail(FailureReason.MISSING_PACKET, "assembly", missing[0])
 
-        if not assembles_exactly(submitted_coords, self.registry.original_fragments(), challenge.transform):
+        if self.options.check_assembly and not assembles_exactly(
+            submitted_coords,
+            self.registry.original_fragments(),
+            challenge.transform,
+        ):
             return fail(FailureReason.ASSEMBLY_FAILED, "assembly", None)
 
         latency = elapsed()

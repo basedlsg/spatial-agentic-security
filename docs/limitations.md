@@ -15,6 +15,10 @@ USAG v1 is narrow by design.
 The v1 verifier holds trusted fragment records and decrypts transformed coordinates.
 This is acceptable for a protocol simulator, but not for a production privacy claim.
 
+USAG v0.3 assumes a trusted gateway/verifier. The verifier stores raw fragments and can
+bypass or forge verification if compromised. Current results test fail-closed
+communication under this assumption.
+
 Future privacy progression:
 
 ```text
