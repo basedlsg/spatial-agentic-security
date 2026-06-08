@@ -109,3 +109,10 @@ uv run spatial-swarm benchmark v0_3_focused_10000
 ```
 
 The project supports Python 3.9+ because the current local system Python is 3.9.6.
+
+Current clean benchmark summaries are in:
+
+```text
+docs/results_v0_2.md
+docs/results_v0_3.md
+```

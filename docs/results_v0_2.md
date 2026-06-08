@@ -1,14 +1,25 @@
 # Results v0.2
 
-These results come from raw artifacts in `runs/` generated on June 8, 2026. The v0.2
-benchmark code was still in the working tree when these runs were generated, so the
-artifact `git_commit.txt` files point at the previous commit. Treat this as a valid
-engineering benchmark and rerun after the v0.2 commit before using the numbers in a paper.
+These results were generated from a clean committed tree.
+
+```text
+commit: 761439ec02b6da07ee0f2a7b37851b8873d513cf
+Python: 3.13.2
+platform: macOS-26.2-arm64-arm-64bit-Mach-O
+machine: arm64
+uv.lock SHA-256: c9bfd2dd5969d91149c5383635ddb096b801c49b4d45d74e2af4ff281119a306
+```
+
+The earlier dirty-tree artifacts remain in `runs/` as engineering history, but the
+artifacts below are the paper-grade v0.2 rerun.
 
 ## Test Result
 
 ```text
-35 tests passed
+uv run --extra dev pytest
+40 passed
+uv lock --check
+Resolved 27 packages
 ```
 
 ## 1,000-Attempt Matrix
@@ -16,7 +27,8 @@ engineering benchmark and rerun after the v0.2 commit before using the numbers i
 Run artifact:
 
 ```text
-runs/2026-06-08T03-11-36.104115Z
+runs/2026-06-08T12-14-14.051135Z
+worktree_dirty: false
 ```
 
 Configuration:
@@ -35,41 +47,37 @@ honest: 1000 / 1000 passed
 all attack scenarios: 0 / 24,000 unauthorized attempts passed
 ```
 
-Key attack outcomes:
+Key outcomes:
 
 | Scenario | Passes | Failure reason | Stage | p95 latency ms |
 | --- | ---: | --- | --- | ---: |
-| fake_agent | 0 / 1000 | `wrong_signature` | signature | 16.085 |
-| unregistered_fake_agent | 0 / 1000 | `unregistered_agent` | registration | 0.012 |
-| replay | 0 / 1000 | `wrong_message_hash` | message_binding | 0.022 |
-| wrong_message | 0 / 1000 | `wrong_message_hash` | message_binding | 0.015 |
-| overbudget | 0 / 1000 | `over_budget` | proof_envelope | 0.946 |
-| underbudget | 0 / 1000 | `under_budget` | proof_envelope | 0.117 |
-| malformed | 0 / 1000 | `malformed_packet` | registration | 0.099 |
-| duplicate | 0 / 1000 | `duplicate_submission` | submission_policy | 30.049 |
-| slow | 0 / 1000 | `late_packet` | timeout | 0.124 |
-| missing | 0 / 1000 | `missing_packet` | assembly | 24.078 |
-| partial_swarm | 0 / 1000 | `missing_packet` | assembly | 26.391 |
-| stolen_piece | 0 / 1000 | `missing_packet` | assembly | 3.621 |
-| stolen_signing_key_only | 0 / 1000 | `wrong_geometry` | geometry | 12.439 |
-| stolen_fragment_only | 0 / 1000 | `wrong_signature` | signature | 9.410 |
-| correct_geometry_wrong_agent_id | 0 / 1000 | `response_binding_failed` | response_binding | 12.258 |
+| fake_agent | 0 / 1000 | `wrong_signature` | signature | 28.027 |
+| unregistered_fake_agent | 0 / 1000 | `unregistered_agent` | registration | 0.018 |
+| replay | 0 / 1000 | `wrong_message_hash` | message_binding | 0.026 |
+| wrong_message | 0 / 1000 | `wrong_message_hash` | message_binding | 0.023 |
+| overbudget | 0 / 1000 | `over_budget` | proof_envelope | 1.365 |
+| underbudget | 0 / 1000 | `under_budget` | proof_envelope | 0.118 |
+| malformed | 0 / 1000 | `malformed_packet` | registration | 0.127 |
+| duplicate | 0 / 1000 | `duplicate_submission` | submission_policy | 71.025 |
+| missing | 0 / 1000 | `missing_packet` | assembly | 74.661 |
+| partial_swarm | 0 / 1000 | `missing_packet` | assembly | 72.579 |
+| stolen_signing_authority_only | 0 / 1000 | `wrong_geometry` | geometry | 87.879 |
+| stolen_fragment_only | 0 / 1000 | `wrong_signature` | signature | 10.773 |
+| correct_geometry_wrong_agent_id | 0 / 1000 | `response_binding_failed` | response_binding | 7.380 |
 
-## Packet Position Results
+Packet-position outcomes:
 
-The verifier is fail-fast. Latency increases when the first bad packet appears later.
-
-| Scenario | Position | Packets checked p50 | Stage | p95 latency ms |
+| Scenario | Position | Passes | Failure stage | p95 latency ms |
 | --- | --- | ---: | --- | ---: |
-| valid_signature_wrong_geometry | early | 1 | geometry | 4.521 |
-| valid_signature_wrong_geometry | middle | 4 | geometry | 19.694 |
-| valid_signature_wrong_geometry | late | 8 | geometry | 51.148 |
-| valid_signature_wrong_transform | early | 1 | geometry | 6.964 |
-| valid_signature_wrong_transform | middle | 4 | geometry | 28.504 |
-| valid_signature_wrong_transform | late | 8 | geometry | 27.935 |
-| valid_signature_wrong_message_hash | early | 1 | message_binding | 0.012 |
-| valid_signature_wrong_message_hash | middle | 4 | message_binding | 7.149 |
-| valid_signature_wrong_message_hash | late | 8 | message_binding | 21.057 |
+| valid_signature_wrong_geometry | early | 0 / 1000 | geometry | 1.885 |
+| valid_signature_wrong_geometry | middle | 0 / 1000 | geometry | 7.416 |
+| valid_signature_wrong_geometry | late | 0 / 1000 | geometry | 14.831 |
+| valid_signature_wrong_transform | early | 0 / 1000 | geometry | 1.743 |
+| valid_signature_wrong_transform | middle | 0 / 1000 | geometry | 6.735 |
+| valid_signature_wrong_transform | late | 0 / 1000 | geometry | 13.484 |
+| valid_signature_wrong_message_hash | early | 0 / 1000 | message_binding | 0.006 |
+| valid_signature_wrong_message_hash | middle | 0 / 1000 | message_binding | 4.568 |
+| valid_signature_wrong_message_hash | late | 0 / 1000 | message_binding | 11.175 |
 
 The message-hash variants perform no signature, decryption, or geometry work on the bad
 packet itself. Middle/late latency reflects valid packets processed before the bad packet.
@@ -79,7 +87,8 @@ packet itself. Middle/late latency reflects valid packets processed before the b
 Run artifact:
 
 ```text
-runs/2026-06-08T03-28-56.200038Z
+runs/2026-06-08T12-47-47.093587Z
+worktree_dirty: false
 ```
 
 Result:
@@ -89,14 +98,25 @@ N = 1024
 attempts = 100
 honest passes = 100 / 100
 failure count = 0
-p50 latency = 2101.368 ms
-p95 latency = 3581.651 ms
-p99 latency = 4081.861 ms
+p50 latency = 2778.739 ms
+p95 latency = 10562.068 ms
+p99 latency = 49155.954 ms
+max latency = 71462.827 ms
 p95 proof bytes = 1,241,353
-RSS = 104.844 MB
+RSS = 106.484 MB
 ```
 
+This run had high-tail latency outliers. They are preserved as measured and should be
+investigated before making performance claims.
+
 ## 1024-Agent Attack Scale
+
+Run artifact:
+
+```text
+runs/2026-06-08T14-52-34.372008Z
+worktree_dirty: false
+```
 
 Configuration:
 
@@ -106,26 +126,25 @@ attempts = 100 per scenario
 fragment_size = 16
 ```
 
-| Scenario | Passes | Failure reason | Packets checked p50 | p95 latency ms | RSS MB |
-| --- | ---: | --- | ---: | ---: | ---: |
-| fake_agent_early | 0 / 100 | `wrong_signature` | 1 | 1.332 | 57.859 |
-| fake_agent_middle | 0 / 100 | `wrong_signature` | 512 | 2060.847 | 83.031 |
-| fake_agent_late | 0 / 100 | `wrong_signature` | 1024 | 7432.410 | 106.188 |
-| valid_signature_wrong_geometry_early | 0 / 100 | `wrong_geometry` | 1 | 9.753 | 59.125 |
-| valid_signature_wrong_geometry_middle | 0 / 100 | `wrong_geometry` | 512 | 2227.390 | 82.781 |
-| valid_signature_wrong_geometry_late | 0 / 100 | `wrong_geometry` | 1024 | 3255.078 | 105.906 |
-| replay_early | 0 / 100 | `wrong_message_hash` | 1 | 0.008 | 65.766 |
-| replay_late | 0 / 100 | `wrong_message_hash` | 1024 | 1624.564 | 107.422 |
+| Scenario | Passes | Failure reason | Stage | p95 latency ms | max latency ms |
+| --- | ---: | --- | --- | ---: | ---: |
+| fake_agent_early | 0 / 100 | `wrong_signature` | signature | 0.987 | 1.208 |
+| fake_agent_middle | 0 / 100 | `wrong_signature` | signature | 826.098 | 876.899 |
+| fake_agent_late | 0 / 100 | `wrong_signature` | signature | 1947.450 | 2427.208 |
+| valid_signature_wrong_geometry_early | 0 / 100 | `wrong_geometry` | geometry | 3.915 | 22.953 |
+| valid_signature_wrong_geometry_middle | 0 / 100 | `wrong_geometry` | geometry | 970.363 | 1228.849 |
+| valid_signature_wrong_geometry_late | 0 / 100 | `wrong_geometry` | geometry | 21177.219 | 267434.703 |
+| replay_early | 0 / 100 | `wrong_message_hash` | message_binding | 0.030 | 0.077 |
+| replay_late | 0 / 100 | `wrong_message_hash` | message_binding | 14433.507 | 114357.261 |
 
-The `fake_agent_late` run had a high-tail outlier (`max = 80377.943 ms`). Treat that as a
-measurement outlier to investigate before publication; do not smooth it away.
+Late-position geometry and replay cases had very large high-tail latencies. Treat these
+as scale costs to optimize, not as values to smooth away.
 
 ## Trusted Verifier Limitation
 
-USAG v1 assumes a trusted gateway/verifier. The verifier stores raw fragment material and
-commitments in the registry, decrypts submitted proof packets, and compares transformed
-coordinates against registered fragments. A compromised gateway/verifier can forge,
-bypass, or falsely reject communication.
+USAG v0.2 assumes a trusted gateway/verifier. The verifier stores raw fragments and can
+bypass or forge verification if compromised. Current results test fail-closed
+communication under this assumption.
 
 ## Interpretation
 
@@ -137,5 +156,5 @@ implemented unauthorized, malformed, replay, budget, stolen-material, and wrong-
 attacks failed closed.
 ```
 
-It does not support claims of foolproof security, semantic truth, or superiority over
-cryptographic signatures in general.
+It does not support claims of foolproof security, semantic truth, verifier-compromise
+resistance, or superiority over cryptographic signatures in general.
