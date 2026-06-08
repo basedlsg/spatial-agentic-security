@@ -104,7 +104,9 @@ class PacketFuzzer:
             fields["epoch"] = "epoch_wrong"
             return self._resign(gateway, packet.agent_id, fields)
         if kind == "signature":
-            fields["signature"] = "A" + fields["signature"][1:]
+            first = fields["signature"][0] if fields["signature"] else "A"
+            replacement = "B" if first == "A" else "A"
+            fields["signature"] = replacement + fields["signature"][1:]
             return ProofPacket(**fields)
         if kind == "encrypted_payload":
             fields["encrypted_fragment_response"] = "not-base64!"

@@ -1,8 +1,9 @@
 import json
 from pathlib import Path
 
-from spatial_swarm.attacks.fuzzer import MUTATION_KINDS
+from spatial_swarm.attacks.fuzzer import MUTATION_KINDS, PacketFuzzer
 from spatial_swarm.core.errors import FailureReason
+from spatial_swarm.core.gateway import Gateway
 from spatial_swarm.experiments.runner import (
     normalize_argv,
     run_ablation_matrix,
@@ -86,3 +87,18 @@ def test_fuzzer_mutations_fail_closed_without_crashing():
         result = scenario(4, 8, 203, None)
         assert not result.passed
         assert result.failure_reason
+
+
+def test_fuzzer_signature_mutation_always_changes_signature():
+    gateway = Gateway.create_swarm(agent_count=4, fragment_size=8, seed=303)
+    message = gateway.freeze("agent_001", "agent_002", {"body": "signature mutation"})
+    challenge = gateway.challenge(message)
+    packet = gateway.collect_honest_packets(message, challenge)[0]
+    fields = packet.as_dict()
+    fields["signature"] = "A" + fields["signature"][1:]
+    packet = type(packet)(**fields)
+
+    mutated = PacketFuzzer(303)._mutate_packet("signature", gateway, message, challenge, packet, None)
+
+    assert mutated.signature[0] == "B"
+    assert mutated.signature != packet.signature
