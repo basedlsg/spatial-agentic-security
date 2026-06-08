@@ -19,11 +19,34 @@ def summarize_results(results: list[VerificationResult], scenario: str) -> dict[
     latencies = [result.latency_ms for result in results]
     proof_totals = [result.proof_bytes_total for result in results]
     failure_reasons: dict[str, int] = {}
+    stage_distribution: dict[str, int] = {}
+    packets_before_failure: list[float] = []
+    signatures_verified: list[float] = []
+    decryptions_performed: list[float] = []
+    geometry_checks_performed: list[float] = []
     ejections = 0
     collapses = 0
     for result in results:
         if result.failure_reason:
             failure_reasons[result.failure_reason] = failure_reasons.get(result.failure_reason, 0) + 1
+        failure_event = next((event for event in result.events if event.event_type == "proof_failed"), None)
+        terminal_event = failure_event or next(
+            (event for event in reversed(result.events) if event.event_type == "message_released"),
+            None,
+        )
+        if terminal_event:
+            if terminal_event.failure_stage:
+                stage_distribution[terminal_event.failure_stage] = (
+                    stage_distribution.get(terminal_event.failure_stage, 0) + 1
+                )
+            if terminal_event.packets_checked_before_failure is not None:
+                packets_before_failure.append(float(terminal_event.packets_checked_before_failure))
+            if terminal_event.signatures_verified is not None:
+                signatures_verified.append(float(terminal_event.signatures_verified))
+            if terminal_event.decryptions_performed is not None:
+                decryptions_performed.append(float(terminal_event.decryptions_performed))
+            if terminal_event.geometry_checks_performed is not None:
+                geometry_checks_performed.append(float(terminal_event.geometry_checks_performed))
         if result.ejection:
             ejections += 1
         if result.collapsed:
@@ -39,6 +62,11 @@ def summarize_results(results: list[VerificationResult], scenario: str) -> dict[
         "ejections": ejections,
         "swarm_collapse_rate": collapses / attempts if attempts else 0.0,
         "failure_reasons": failure_reasons,
+        "stage_distribution": stage_distribution,
+        "packets_checked_before_failure": _latency_summary(packets_before_failure),
+        "signatures_verified": _latency_summary(signatures_verified),
+        "decryptions_performed": _latency_summary(decryptions_performed),
+        "geometry_checks_performed": _latency_summary(geometry_checks_performed),
         "latency_ms": _latency_summary(latencies),
         "proof_bytes_total": _latency_summary(proof_totals),
     }
@@ -78,6 +106,7 @@ def write_summary(path: Path, metrics: dict[str, Any]) -> None:
         f"- latency_p95_ms: {metrics['latency_ms']['p95']:.3f}",
         f"- proof_bytes_max: {metrics['proof_bytes_total']['max']:.0f}",
         f"- failure_reasons: {json.dumps(metrics['failure_reasons'], sort_keys=True)}",
+        f"- stage_distribution: {json.dumps(metrics.get('stage_distribution', {}), sort_keys=True)}",
         "",
         "Report zero observed unauthorized passes as an observation under this configuration,",
         "not as an impossibility claim.",

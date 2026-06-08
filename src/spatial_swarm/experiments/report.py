@@ -63,7 +63,15 @@ def write_git_commit(run_dir: Path) -> None:
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
     except Exception:
         commit = "unknown"
-    (run_dir / "git_commit.txt").write_text(commit + "\n", encoding="utf-8")
+    try:
+        status = subprocess.check_output(["git", "status", "--short"], text=True).strip()
+    except Exception:
+        status = ""
+    dirty = "true" if status else "false"
+    (run_dir / "git_commit.txt").write_text(
+        f"commit: {commit}\nworktree_dirty: {dirty}\n",
+        encoding="utf-8",
+    )
 
 
 def write_yaml_like(path: Path, values: dict[str, Any]) -> None:

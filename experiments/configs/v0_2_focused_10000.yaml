@@ -1,0 +1,5 @@
+scenario: v0_2_focused_10000
+agent_count: 8
+fragment_size: 16
+attempts: 10000
+field: F_257^3

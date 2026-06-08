@@ -6,10 +6,12 @@ import base64
 from typing import Any
 
 from nacl.public import SealedBox
+from nacl.signing import SigningKey
 
 from spatial_swarm.core.gateway import Gateway
 from spatial_swarm.core.message import FrozenMessage
 from spatial_swarm.crypto.commitments import normalize_coords, proof_commitment
+from spatial_swarm.crypto.hashing import hash_bytes
 from spatial_swarm.crypto.signatures import sign_payload
 from spatial_swarm.protocol.challenge import Challenge
 from spatial_swarm.protocol.proof_packet import FragmentResponse, ProofPacket
@@ -63,6 +65,127 @@ class ValidSignatureWrongGeometryAgent:
                 message.message_id,
                 challenge.challenge_id,
                 wrong_coords,
+            ),
+            "encrypted_fragment_response": base64.b64encode(encrypted).decode("ascii"),
+            "signature": "",
+            "submitted_at_ms": 0.0,
+        }
+        unsigned = ProofPacket(**fields)
+        fields["signature"] = sign_payload(
+            gateway.sidecars[self.target_agent_id].signing_key,
+            unsigned.signed_payload(),
+        )
+        return ProofPacket(**fields)
+
+
+class StolenSigningKeyOnlyAgent(ValidSignatureWrongGeometryAgent):
+    """Explicit name for valid signing authority without the correct spatial fragment."""
+
+
+class StolenFragmentOnlyAgent:
+    """Submits correct target geometry but signs with an attacker-controlled key."""
+
+    def __init__(self, target_agent_id: str, seed: int = 9001) -> None:
+        self.target_agent_id = target_agent_id
+        self.signing_key = SigningKey(hash_bytes("stolen-fragment-only-key", seed, target_agent_id)[:32])
+
+    def replace_agent_packets(
+        self,
+        gateway: Gateway,
+        message: FrozenMessage,
+        challenge: Challenge,
+    ) -> list[ProofPacket]:
+        packets = gateway.collect_honest_packets(message, challenge)
+        malicious = self.packet(gateway, message, challenge)
+        return [malicious if packet.agent_id == self.target_agent_id else packet for packet in packets]
+
+    def packet(
+        self,
+        gateway: Gateway,
+        message: FrozenMessage,
+        challenge: Challenge,
+    ) -> ProofPacket:
+        registration = gateway.registry.require(self.target_agent_id)
+        correct_coords = challenge.transform.apply(registration.fragment.coords)
+        response = FragmentResponse(
+            agent_id=self.target_agent_id,
+            message_id=message.message_id,
+            challenge_id=challenge.challenge_id,
+            fragment_commitment=registration.fragment_commitment,
+            coords=normalize_coords(correct_coords),
+        )
+        encrypted = SealedBox(gateway.private_key.public_key).encrypt(
+            response.model_dump_json().encode("utf-8")
+        )
+        fields: dict[str, Any] = {
+            "agent_id": self.target_agent_id,
+            "epoch": gateway.epoch,
+            "message_id": message.message_id,
+            "challenge_id": challenge.challenge_id,
+            "proof_version": "v1",
+            "submission_number": 1,
+            "proof_commitment": proof_commitment(
+                self.target_agent_id,
+                message.message_id,
+                challenge.challenge_id,
+                correct_coords,
+            ),
+            "encrypted_fragment_response": base64.b64encode(encrypted).decode("ascii"),
+            "signature": "",
+            "submitted_at_ms": 0.0,
+        }
+        unsigned = ProofPacket(**fields)
+        fields["signature"] = sign_payload(self.signing_key, unsigned.signed_payload())
+        return ProofPacket(**fields)
+
+
+class CorrectGeometryWrongAgentIdAgent:
+    """Uses one agent's correct transformed geometry under another registered agent ID."""
+
+    def __init__(self, target_agent_id: str, source_agent_id: str) -> None:
+        self.target_agent_id = target_agent_id
+        self.source_agent_id = source_agent_id
+
+    def replace_agent_packets(
+        self,
+        gateway: Gateway,
+        message: FrozenMessage,
+        challenge: Challenge,
+    ) -> list[ProofPacket]:
+        packets = gateway.collect_honest_packets(message, challenge)
+        malicious = self.packet(gateway, message, challenge)
+        return [malicious if packet.agent_id == self.target_agent_id else packet for packet in packets]
+
+    def packet(
+        self,
+        gateway: Gateway,
+        message: FrozenMessage,
+        challenge: Challenge,
+    ) -> ProofPacket:
+        source_registration = gateway.registry.require(self.source_agent_id)
+        source_coords = challenge.transform.apply(source_registration.fragment.coords)
+        response = FragmentResponse(
+            agent_id=self.source_agent_id,
+            message_id=message.message_id,
+            challenge_id=challenge.challenge_id,
+            fragment_commitment=source_registration.fragment_commitment,
+            coords=normalize_coords(source_coords),
+        )
+        encrypted = SealedBox(gateway.private_key.public_key).encrypt(
+            response.model_dump_json().encode("utf-8")
+        )
+        fields: dict[str, Any] = {
+            "agent_id": self.target_agent_id,
+            "epoch": gateway.epoch,
+            "message_id": message.message_id,
+            "challenge_id": challenge.challenge_id,
+            "proof_version": "v1",
+            "submission_number": 1,
+            "proof_commitment": proof_commitment(
+                self.target_agent_id,
+                message.message_id,
+                challenge.challenge_id,
+                source_coords,
             ),
             "encrypted_fragment_response": base64.b64encode(encrypted).decode("ascii"),
             "signature": "",

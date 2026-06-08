@@ -68,6 +68,14 @@ under stated configuration, for example:
 
 The system is about membership and communication authorization, not semantic truth.
 
+## Trusted Verifier Assumption
+
+USAG v1 assumes a trusted gateway/verifier. The verifier stores raw fragment material and
+commitments in the registry, decrypts submitted proof packets, and compares transformed
+coordinates against registered fragments. A compromised gateway/verifier can forge,
+bypass, or falsely reject communication. This prototype evaluates fail-closed
+communication under a trusted-verifier assumption, not verifier-compromise resistance.
+
 ## Repository Map
 
 ```text

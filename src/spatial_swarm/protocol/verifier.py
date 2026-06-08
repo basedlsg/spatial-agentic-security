@@ -35,6 +35,11 @@ class VerificationEvent:
     proof_bytes: Optional[int] = None
     latency_ms: Optional[float] = None
     submission_number: Optional[int] = None
+    failure_stage: Optional[str] = None
+    packets_checked_before_failure: Optional[int] = None
+    signatures_verified: Optional[int] = None
+    decryptions_performed: Optional[int] = None
+    geometry_checks_performed: Optional[int] = None
 
     def to_log_dict(self, run_id: str) -> dict[str, Any]:
         return {
@@ -49,6 +54,11 @@ class VerificationEvent:
             "proof_bytes": self.proof_bytes,
             "latency_ms": self.latency_ms,
             "submission_number": self.submission_number,
+            "failure_stage": self.failure_stage,
+            "packets_checked_before_failure": self.packets_checked_before_failure,
+            "signatures_verified": self.signatures_verified,
+            "decryptions_performed": self.decryptions_performed,
+            "geometry_checks_performed": self.geometry_checks_performed,
         }
 
 
@@ -81,16 +91,22 @@ class Verifier:
         proof_bytes_total = 0
         submitted_coords: dict[str, set[tuple[int, int, int]]] = {}
         seen_this_round: set[str] = set()
+        packets_started = 0
+        signatures_verified = 0
+        decryptions_performed = 0
+        geometry_checks_performed = 0
 
         def elapsed() -> float:
             return (time.perf_counter() - started) * 1000.0
 
         def fail(
             reason: FailureReason,
+            stage: str,
             agent_id: Optional[str],
             proof_bytes: Optional[int] = None,
             submission_number: Optional[int] = None,
         ) -> VerificationResult:
+            nonlocal packets_started, signatures_verified, decryptions_performed, geometry_checks_performed
             self.registry.eject(agent_id)
             latency = elapsed()
             ejection = Ejection(
@@ -111,6 +127,11 @@ class Verifier:
                     proof_bytes=proof_bytes,
                     latency_ms=latency,
                     submission_number=submission_number,
+                    failure_stage=stage,
+                    packets_checked_before_failure=packets_started,
+                    signatures_verified=signatures_verified,
+                    decryptions_performed=decryptions_performed,
+                    geometry_checks_performed=geometry_checks_performed,
                 )
             )
             return VerificationResult(
@@ -125,9 +146,10 @@ class Verifier:
             )
 
         if self.registry.state != SwarmState.ACTIVE:
-            return fail(FailureReason.SWARM_COLLAPSED, None)
+            return fail(FailureReason.SWARM_COLLAPSED, "agent_status", None)
 
         for raw_packet in raw_packets:
+            packets_started += 1
             packet: ProofPacket
             if isinstance(raw_packet, ProofPacket):
                 packet = raw_packet
@@ -135,39 +157,49 @@ class Verifier:
                 try:
                     packet = ProofPacket.model_validate(raw_packet)
                 except ValidationError:
-                    return fail(FailureReason.MALFORMED_PACKET, raw_packet.get("agent_id"))
+                    return fail(FailureReason.MALFORMED_PACKET, "registration", raw_packet.get("agent_id"))
 
             agent_id = packet.agent_id
             registration = self.registry.get(agent_id)
             if registration is None:
                 return fail(
                     FailureReason.UNREGISTERED_AGENT,
+                    "registration",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
             if not registration.active:
                 return fail(
                     FailureReason.INACTIVE_AGENT,
+                    "agent_status",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
             if packet.epoch != self.registry.epoch:
-                return fail(FailureReason.WRONG_EPOCH, agent_id, submission_number=packet.submission_number)
+                return fail(
+                    FailureReason.WRONG_EPOCH,
+                    "epoch_binding",
+                    agent_id,
+                    submission_number=packet.submission_number,
+                )
             if packet.message_id != message.message_id:
                 return fail(
                     FailureReason.WRONG_MESSAGE_HASH,
+                    "message_binding",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
             if packet.challenge_id != challenge.challenge_id:
                 return fail(
                     FailureReason.WRONG_CHALLENGE,
+                    "challenge_binding",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
             if packet.submission_number != 1:
                 return fail(
                     FailureReason.INVALID_SUBMISSION_NUMBER,
+                    "submission_policy",
                     agent_id,
                     submission_number=packet.submission_number,
                 )
@@ -177,6 +209,7 @@ class Verifier:
                 proof_bytes_total += size
                 return fail(
                     FailureReason.DUPLICATE_SUBMISSION,
+                    "submission_policy",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -189,6 +222,7 @@ class Verifier:
             if size_state == "over":
                 return fail(
                     FailureReason.OVER_BUDGET,
+                    "proof_envelope",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -196,6 +230,7 @@ class Verifier:
             if size_state == "under":
                 return fail(
                     FailureReason.UNDER_BUDGET,
+                    "proof_envelope",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -203,6 +238,7 @@ class Verifier:
             if packet.submitted_at_ms > registration.envelope.timeout_ms:
                 return fail(
                     FailureReason.LATE_PACKET,
+                    "timeout",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -210,10 +246,12 @@ class Verifier:
             if not verify_payload(registration.verify_key, packet.signed_payload(), packet.signature):
                 return fail(
                     FailureReason.WRONG_SIGNATURE,
+                    "signature",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
                 )
+            signatures_verified += 1
 
             try:
                 encrypted = base64.b64decode(
@@ -221,10 +259,12 @@ class Verifier:
                     validate=True,
                 )
                 plaintext = SealedBox(self.private_key).decrypt(encrypted)
+                decryptions_performed += 1
                 response = FragmentResponse.model_validate_json(plaintext)
             except (ValueError, CryptoError, ValidationError):
                 return fail(
                     FailureReason.DECRYPTION_FAILED,
+                    "decrypt",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -238,6 +278,7 @@ class Verifier:
             ):
                 return fail(
                     FailureReason.RESPONSE_BINDING_FAILED,
+                    "response_binding",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -253,15 +294,18 @@ class Verifier:
             if packet.proof_commitment != expected_commitment:
                 return fail(
                     FailureReason.WRONG_PROOF_COMMITMENT,
+                    "commitment",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
                 )
 
             expected = challenge.transform.apply(registration.fragment.coords)
+            geometry_checks_performed += 1
             if coords != expected:
                 return fail(
                     FailureReason.WRONG_GEOMETRY,
+                    "geometry",
                     agent_id,
                     proof_bytes=size,
                     submission_number=packet.submission_number,
@@ -285,10 +329,10 @@ class Verifier:
 
         missing = [agent_id for agent_id in self.registry.original_agent_ids if agent_id not in submitted_coords]
         if missing:
-            return fail(FailureReason.MISSING_PACKET, missing[0])
+            return fail(FailureReason.MISSING_PACKET, "assembly", missing[0])
 
         if not assembles_exactly(submitted_coords, self.registry.original_fragments(), challenge.transform):
-            return fail(FailureReason.ASSEMBLY_FAILED, None)
+            return fail(FailureReason.ASSEMBLY_FAILED, "assembly", None)
 
         latency = elapsed()
         events.append(
@@ -302,6 +346,11 @@ class Verifier:
                 proof_bytes=proof_bytes_total,
                 latency_ms=latency,
                 submission_number=None,
+                failure_stage="release",
+                packets_checked_before_failure=packets_started,
+                signatures_verified=signatures_verified,
+                decryptions_performed=decryptions_performed,
+                geometry_checks_performed=geometry_checks_performed,
             )
         )
         return VerificationResult(

@@ -1,0 +1,5 @@
+scenario: v0_2_matrix
+agent_count: 8
+fragment_size: 16
+attempts: 1000
+field: F_257^3

@@ -8,6 +8,9 @@ from spatial_swarm.attacks.replay_agent import ReplayAgent
 from spatial_swarm.attacks.slow_agent import SlowAgent
 from spatial_swarm.attacks.stolen_piece_agent import StolenSinglePieceAgent
 from spatial_swarm.attacks.valid_signature_agent import (
+    CorrectGeometryWrongAgentIdAgent,
+    StolenFragmentOnlyAgent,
+    StolenSigningKeyOnlyAgent,
     ValidSignatureWrongGeometryAgent,
     ValidSignatureWrongMessageHashAgent,
     ValidSignatureWrongTransformAgent,
@@ -21,7 +24,10 @@ __all__ = [
     "RandomFakeAgent",
     "ReplayAgent",
     "SlowAgent",
+    "CorrectGeometryWrongAgentIdAgent",
+    "StolenFragmentOnlyAgent",
     "StolenSinglePieceAgent",
+    "StolenSigningKeyOnlyAgent",
     "UnderBudgetAgent",
     "ValidSignatureWrongGeometryAgent",
     "ValidSignatureWrongMessageHashAgent",

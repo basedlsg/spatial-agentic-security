@@ -64,3 +64,21 @@ USAG does not claim:
 - universal attack prevention
 - superiority over signatures in all settings
 - production-grade zero-knowledge privacy
+
+## Attack Coverage Table
+
+| Attack | Current status | Expected result | Notes |
+| --- | ---: | --- | --- |
+| New unregistered agent | tested | fail | `unregistered_agent` |
+| Impersonates registered ID without key | tested | fail | `wrong_signature` |
+| Valid signature, wrong geometry | tested | fail | `wrong_geometry` |
+| Replay old proof | tested | fail | `wrong_message_hash` |
+| Wrong message proof | tested | fail | `wrong_message_hash` |
+| Duplicate submission | tested | fail | `duplicate_submission` |
+| Late packet | tested | fail | `late_packet` |
+| Missing packet | tested | fail | `missing_packet` |
+| Stolen signing key only | tested | fail | should fail geometry |
+| Stolen fragment only | tested | fail | should fail signature |
+| Stolen key plus fragment | documented | may pass | out of scope without sidecar hardening |
+| Compromised gateway | documented | catastrophic | trusted verifier assumption |
+| All agents approve malicious content | documented | may pass | semantic safety out of scope |

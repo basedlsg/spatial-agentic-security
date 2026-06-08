@@ -11,10 +11,12 @@ from spatial_swarm.attacks.duplicate_agent import DuplicateAgent
 from spatial_swarm.attacks.fake_agent import RandomFakeAgent
 from spatial_swarm.attacks.malformed_agent import MalformedAgent
 from spatial_swarm.attacks.overbudget_agent import OverBudgetAgent, UnderBudgetAgent
-from spatial_swarm.attacks.replay_agent import ReplayAgent
 from spatial_swarm.attacks.slow_agent import SlowAgent
 from spatial_swarm.attacks.stolen_piece_agent import PartialSwarmAgent, StolenSinglePieceAgent
 from spatial_swarm.attacks.valid_signature_agent import (
+    CorrectGeometryWrongAgentIdAgent,
+    StolenFragmentOnlyAgent,
+    StolenSigningKeyOnlyAgent,
     ValidSignatureWrongGeometryAgent,
     ValidSignatureWrongMessageHashAgent,
     ValidSignatureWrongTransformAgent,
@@ -47,6 +49,28 @@ from spatial_swarm.protocol.verifier import VerificationResult
 Scenario = Callable[[int, int, int, Optional[RunLogger]], VerificationResult]
 
 
+def _target_agent_id(agent_count: int, position: str) -> str:
+    if agent_count <= 1:
+        index = 1
+    elif position == "early":
+        index = 1
+    elif position == "middle":
+        index = max(1, agent_count // 2)
+    elif position == "late":
+        index = agent_count
+    else:
+        raise ValueError(f"unknown packet position {position!r}")
+    return f"agent_{index:03d}"
+
+
+def _source_agent_id(agent_count: int, target_agent_id: str) -> str:
+    for index in range(1, agent_count + 1):
+        candidate = f"agent_{index:03d}"
+        if candidate != target_agent_id:
+            return candidate
+    return target_agent_id
+
+
 def _gateway(agent_count: int, fragment_size: int, seed: int, logger: Optional[RunLogger]) -> Gateway:
     return Gateway.create_swarm(
         agent_count=agent_count,
@@ -71,14 +95,52 @@ def run_missing(agent_count: int, fragment_size: int, seed: int, logger: Optiona
 
 
 def run_fake_agent(agent_count: int, fragment_size: int, seed: int, logger: Optional[RunLogger]) -> VerificationResult:
+    return run_fake_agent_middle(agent_count, fragment_size, seed, logger)
+
+
+def _run_fake_agent_position(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+    position: str,
+) -> VerificationResult:
     gateway = _gateway(agent_count, fragment_size, seed, logger)
-    fake = RandomFakeAgent("agent_004" if agent_count >= 4 else "agent_001", seed=seed + 42)
+    target_agent_id = _target_agent_id(agent_count, position)
+    fake = RandomFakeAgent(target_agent_id, seed=seed + 42)
     return gateway.send(
         "agent_001",
         "agent_002",
-        {"type": "demo", "body": "fake replacement"},
+        {"type": "demo", "body": f"fake replacement {position}"},
         packet_provider=fake.replace_agent_packets,
     )
+
+
+def run_fake_agent_early(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_fake_agent_position(agent_count, fragment_size, seed, logger, "early")
+
+
+def run_fake_agent_middle(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_fake_agent_position(agent_count, fragment_size, seed, logger, "middle")
+
+
+def run_fake_agent_late(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_fake_agent_position(agent_count, fragment_size, seed, logger, "late")
 
 
 def run_unregistered_fake_agent(
@@ -103,14 +165,55 @@ def run_valid_signature_wrong_geometry(
     seed: int,
     logger: Optional[RunLogger],
 ) -> VerificationResult:
+    return run_valid_signature_wrong_geometry_middle(agent_count, fragment_size, seed, logger)
+
+
+def _run_valid_signature_wrong_geometry_position(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+    position: str,
+) -> VerificationResult:
     gateway = _gateway(agent_count, fragment_size, seed, logger)
-    attack = ValidSignatureWrongGeometryAgent("agent_004" if agent_count >= 4 else "agent_001", "agent_003")
+    target_agent_id = _target_agent_id(agent_count, position)
+    attack = ValidSignatureWrongGeometryAgent(
+        target_agent_id,
+        _source_agent_id(agent_count, target_agent_id),
+    )
     return gateway.send(
         "agent_001",
         "agent_002",
-        {"type": "demo", "body": "valid signature wrong geometry"},
+        {"type": "demo", "body": f"valid signature wrong geometry {position}"},
         packet_provider=attack.replace_agent_packets,
     )
+
+
+def run_valid_signature_wrong_geometry_early(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_geometry_position(agent_count, fragment_size, seed, logger, "early")
+
+
+def run_valid_signature_wrong_geometry_middle(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_geometry_position(agent_count, fragment_size, seed, logger, "middle")
+
+
+def run_valid_signature_wrong_geometry_late(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_geometry_position(agent_count, fragment_size, seed, logger, "late")
 
 
 def run_valid_signature_wrong_transform(
@@ -119,14 +222,55 @@ def run_valid_signature_wrong_transform(
     seed: int,
     logger: Optional[RunLogger],
 ) -> VerificationResult:
+    return run_valid_signature_wrong_transform_middle(agent_count, fragment_size, seed, logger)
+
+
+def _run_valid_signature_wrong_transform_position(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+    position: str,
+) -> VerificationResult:
     gateway = _gateway(agent_count, fragment_size, seed, logger)
-    attack = ValidSignatureWrongTransformAgent("agent_004" if agent_count >= 4 else "agent_001", "agent_003")
+    target_agent_id = _target_agent_id(agent_count, position)
+    attack = ValidSignatureWrongTransformAgent(
+        target_agent_id,
+        _source_agent_id(agent_count, target_agent_id),
+    )
     return gateway.send(
         "agent_001",
         "agent_002",
-        {"type": "demo", "body": "valid signature wrong transform"},
+        {"type": "demo", "body": f"valid signature wrong transform {position}"},
         packet_provider=attack.replace_agent_packets,
     )
+
+
+def run_valid_signature_wrong_transform_early(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_transform_position(agent_count, fragment_size, seed, logger, "early")
+
+
+def run_valid_signature_wrong_transform_middle(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_transform_position(agent_count, fragment_size, seed, logger, "middle")
+
+
+def run_valid_signature_wrong_transform_late(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_transform_position(agent_count, fragment_size, seed, logger, "late")
 
 
 def run_valid_signature_wrong_message_hash(
@@ -135,29 +279,169 @@ def run_valid_signature_wrong_message_hash(
     seed: int,
     logger: Optional[RunLogger],
 ) -> VerificationResult:
+    return run_valid_signature_wrong_message_hash_middle(agent_count, fragment_size, seed, logger)
+
+
+def _run_valid_signature_wrong_message_hash_position(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+    position: str,
+) -> VerificationResult:
     gateway = _gateway(agent_count, fragment_size, seed, logger)
-    attack = ValidSignatureWrongMessageHashAgent("agent_004" if agent_count >= 4 else "agent_001", "agent_003")
+    target_agent_id = _target_agent_id(agent_count, position)
+    attack = ValidSignatureWrongMessageHashAgent(
+        target_agent_id,
+        _source_agent_id(agent_count, target_agent_id),
+    )
     return gateway.send(
         "agent_001",
         "agent_002",
-        {"type": "demo", "body": "valid signature wrong message hash"},
+        {"type": "demo", "body": f"valid signature wrong message hash {position}"},
+        packet_provider=attack.replace_agent_packets,
+    )
+
+
+def run_valid_signature_wrong_message_hash_early(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_message_hash_position(agent_count, fragment_size, seed, logger, "early")
+
+
+def run_valid_signature_wrong_message_hash_middle(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_message_hash_position(agent_count, fragment_size, seed, logger, "middle")
+
+
+def run_valid_signature_wrong_message_hash_late(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_valid_signature_wrong_message_hash_position(agent_count, fragment_size, seed, logger, "late")
+
+
+def run_stolen_signing_key_only(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    target_agent_id = _target_agent_id(agent_count, "middle")
+    attack = StolenSigningKeyOnlyAgent(target_agent_id, _source_agent_id(agent_count, target_agent_id))
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "stolen signing key only"},
+        packet_provider=attack.replace_agent_packets,
+    )
+
+
+def run_stolen_fragment_only(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    attack = StolenFragmentOnlyAgent(_target_agent_id(agent_count, "middle"), seed=seed + 77)
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "stolen fragment only"},
+        packet_provider=attack.replace_agent_packets,
+    )
+
+
+def run_correct_geometry_wrong_agent_id(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    target_agent_id = _target_agent_id(agent_count, "middle")
+    attack = CorrectGeometryWrongAgentIdAgent(
+        target_agent_id,
+        _source_agent_id(agent_count, target_agent_id),
+    )
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "correct geometry wrong agent id"},
         packet_provider=attack.replace_agent_packets,
     )
 
 
 def run_replay(agent_count: int, fragment_size: int, seed: int, logger: Optional[RunLogger]) -> VerificationResult:
+    return run_replay_early(agent_count, fragment_size, seed, logger)
+
+
+def _run_replay_position(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+    position: str,
+) -> VerificationResult:
     gateway = _gateway(agent_count, fragment_size, seed, logger)
     old_message = gateway.freeze("agent_001", "agent_002", {"body": "old"}, nonce="old")
     old_challenge = gateway.challenge(old_message)
     old_packets = gateway.collect_honest_packets(old_message, old_challenge)
-    replay = ReplayAgent(old_packets)
+    old_by_agent = {packet.agent_id: packet for packet in old_packets}
+    target_agent_id = _target_agent_id(agent_count, position)
+
+    def provider(gateway: Gateway, message, challenge):
+        current_packets = gateway.collect_honest_packets(message, challenge)
+        return [
+            old_by_agent[packet.agent_id] if packet.agent_id == target_agent_id else packet
+            for packet in current_packets
+        ]
+
     return gateway.send(
         "agent_001",
         "agent_002",
-        {"body": "new"},
+        {"body": f"new replay {position}"},
         nonce="new",
-        packet_provider=lambda _g, _m, _c: replay.packets_for_replay(),
+        packet_provider=provider,
     )
+
+
+def run_replay_early(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_replay_position(agent_count, fragment_size, seed, logger, "early")
+
+
+def run_replay_middle(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_replay_position(agent_count, fragment_size, seed, logger, "middle")
+
+
+def run_replay_late(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    return _run_replay_position(agent_count, fragment_size, seed, logger, "late")
 
 
 def run_wrong_message(
@@ -257,11 +541,29 @@ SCENARIOS: dict[str, Scenario] = {
     "honest": run_honest,
     "missing": run_missing,
     "fake_agent": run_fake_agent,
+    "fake_agent_early": run_fake_agent_early,
+    "fake_agent_middle": run_fake_agent_middle,
+    "fake_agent_late": run_fake_agent_late,
     "unregistered_fake_agent": run_unregistered_fake_agent,
     "valid_signature_wrong_geometry": run_valid_signature_wrong_geometry,
+    "valid_signature_wrong_geometry_early": run_valid_signature_wrong_geometry_early,
+    "valid_signature_wrong_geometry_middle": run_valid_signature_wrong_geometry_middle,
+    "valid_signature_wrong_geometry_late": run_valid_signature_wrong_geometry_late,
     "valid_signature_wrong_transform": run_valid_signature_wrong_transform,
+    "valid_signature_wrong_transform_early": run_valid_signature_wrong_transform_early,
+    "valid_signature_wrong_transform_middle": run_valid_signature_wrong_transform_middle,
+    "valid_signature_wrong_transform_late": run_valid_signature_wrong_transform_late,
     "valid_signature_wrong_message_hash": run_valid_signature_wrong_message_hash,
+    "valid_signature_wrong_message_hash_early": run_valid_signature_wrong_message_hash_early,
+    "valid_signature_wrong_message_hash_middle": run_valid_signature_wrong_message_hash_middle,
+    "valid_signature_wrong_message_hash_late": run_valid_signature_wrong_message_hash_late,
+    "stolen_signing_key_only": run_stolen_signing_key_only,
+    "stolen_fragment_only": run_stolen_fragment_only,
+    "correct_geometry_wrong_agent_id": run_correct_geometry_wrong_agent_id,
     "replay": run_replay,
+    "replay_early": run_replay_early,
+    "replay_middle": run_replay_middle,
+    "replay_late": run_replay_late,
     "wrong_message": run_wrong_message,
     "duplicate": run_duplicate,
     "overbudget": run_overbudget,
@@ -271,6 +573,46 @@ SCENARIOS: dict[str, Scenario] = {
     "stolen_piece": run_stolen_piece,
     "partial_swarm": run_partial_swarm,
     "scale_smoke": run_scale_smoke,
+}
+
+
+SCENARIO_GROUPS: dict[str, list[str]] = {
+    "v0_2_matrix": [
+        "honest",
+        "fake_agent",
+        "unregistered_fake_agent",
+        "replay",
+        "wrong_message",
+        "overbudget",
+        "underbudget",
+        "malformed",
+        "duplicate",
+        "slow",
+        "missing",
+        "partial_swarm",
+        "stolen_piece",
+        "stolen_signing_key_only",
+        "stolen_fragment_only",
+        "correct_geometry_wrong_agent_id",
+        "valid_signature_wrong_geometry_early",
+        "valid_signature_wrong_geometry_middle",
+        "valid_signature_wrong_geometry_late",
+        "valid_signature_wrong_transform_early",
+        "valid_signature_wrong_transform_middle",
+        "valid_signature_wrong_transform_late",
+        "valid_signature_wrong_message_hash_early",
+        "valid_signature_wrong_message_hash_middle",
+        "valid_signature_wrong_message_hash_late",
+    ],
+    "v0_2_focused_10000": [
+        "honest",
+        "fake_agent",
+        "replay",
+        "valid_signature_wrong_geometry",
+        "valid_signature_wrong_transform",
+        "wrong_message",
+        "unregistered_fake_agent",
+    ],
 }
 
 
@@ -296,9 +638,12 @@ def run_experiment(
 ) -> Path:
     if scenario == "run_all":
         scenario_names = list(SCENARIOS)
+    elif scenario in SCENARIO_GROUPS:
+        scenario_names = SCENARIO_GROUPS[scenario]
     else:
         if scenario not in SCENARIOS:
-            raise ValueError(f"unknown scenario {scenario!r}; expected one of {sorted(SCENARIOS)} or run_all")
+            expected = sorted(list(SCENARIOS) + list(SCENARIO_GROUPS) + ["run_all"])
+            raise ValueError(f"unknown scenario {scenario!r}; expected one of {expected}")
         scenario_names = [scenario]
 
     run_dir = output_root / utc_run_id()
