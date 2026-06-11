@@ -935,7 +935,9 @@ def run_experiment(
         scenario_names = [scenario]
 
     run_dir = output_root / utc_run_id()
-    logger = RunLogger(run_dir)
+    run_dir.mkdir(parents=True, exist_ok=True)
+    log_events = not _uses_compact_event_logging(scenario, attempts, len(scenario_names))
+    logger = RunLogger(run_dir) if log_events else None
     config = {
         "scenario": scenario,
         "agent_count": agent_count,
@@ -943,6 +945,7 @@ def run_experiment(
         "attempts": attempts,
         "determinism_commitment": sha256_hex({"kind": "experiment_seed", "seed": seed}),
         "secret_material_redacted": True,
+        "event_logging": "events_jsonl" if log_events else "compact_metrics_only",
     }
     write_yaml_like(run_dir / "config.yaml", config)
     write_environment(run_dir)
@@ -1012,6 +1015,12 @@ def run_experiment(
             encoding="utf-8",
         )
     return run_dir
+
+
+def _uses_compact_event_logging(scenario: str, attempts: int, scenario_count: int) -> bool:
+    """Skip per-proof logs for high-volume sweeps while preserving metrics."""
+
+    return scenario == "v0_4_focused_10000" and attempts * max(1, scenario_count) >= 50_000
 
 
 def build_parser() -> argparse.ArgumentParser:
