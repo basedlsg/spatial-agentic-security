@@ -23,6 +23,7 @@ from spatial_swarm.attacks.valid_signature_agent import (
     ValidSignatureWrongGeometryAgent,
     ValidSignatureWrongMessageHashAgent,
     ValidSignatureWrongTransformAgent,
+    VerifierSnapshotForgeryAgent,
 )
 from spatial_swarm.attacks.wrong_message_agent import WrongMessageAgent
 from spatial_swarm.core.gateway import Gateway
@@ -409,6 +410,22 @@ def run_correct_geometry_wrong_agent_id(
     )
 
 
+def run_verifier_snapshot_forgery(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = _gateway(agent_count, fragment_size, seed, logger)
+    attack = VerifierSnapshotForgeryAgent(_target_agent_id(agent_count, "middle"), seed=seed + 91)
+    return gateway.send(
+        "agent_001",
+        "agent_002",
+        {"type": "demo", "body": "verifier snapshot forgery"},
+        packet_provider=attack.replace_agent_packets,
+    )
+
+
 def run_replay(agent_count: int, fragment_size: int, seed: int, logger: Optional[RunLogger]) -> VerificationResult:
     return run_replay_early(agent_count, fragment_size, seed, logger)
 
@@ -645,6 +662,7 @@ SCENARIOS: dict[str, Scenario] = {
     "stolen_signing_authority_only": run_stolen_signing_authority_only,
     "stolen_fragment_only": run_stolen_fragment_only,
     "correct_geometry_wrong_agent_id": run_correct_geometry_wrong_agent_id,
+    "verifier_snapshot_forgery": run_verifier_snapshot_forgery,
     "replay": run_replay,
     "replay_early": run_replay_early,
     "replay_middle": run_replay_middle,
@@ -717,6 +735,19 @@ SCENARIO_GROUPS: dict[str, list[str]] = {
         "stolen_fragment_only",
         "correct_geometry_wrong_agent_id",
     ],
+    "v0_4_focused_10000": [
+        "honest",
+        "fake_agent",
+        "unregistered_fake_agent",
+        "replay",
+        "wrong_message",
+        "valid_signature_wrong_geometry",
+        "valid_signature_wrong_transform",
+        "stolen_signing_authority_only",
+        "stolen_fragment_only",
+        "correct_geometry_wrong_agent_id",
+        "verifier_snapshot_forgery",
+    ],
     "attack_scale_1024": [
         "fake_agent_early",
         "fake_agent_middle",
@@ -751,6 +782,7 @@ BASELINE_MATRIX_SCENARIOS = [
     "stolen_signing_authority_only",
     "stolen_fragment_only",
     "correct_geometry_wrong_agent_id",
+    "verifier_snapshot_forgery",
 ]
 
 
@@ -792,6 +824,7 @@ BENCHMARK_PRESETS: dict[str, dict[str, int | str]] = {
     "ablation_matrix": {"scenario": "ablation_matrix", "agents": 8, "attempts": 1000},
     "fuzz_10000": {"scenario": "fuzz_10000", "agents": 8, "attempts": 10000},
     "v0_3_focused_10000": {"scenario": "v0_3_focused_10000", "agents": 8, "attempts": 10000},
+    "v0_4_focused_10000": {"scenario": "v0_4_focused_10000", "agents": 8, "attempts": 10000},
 }
 
 

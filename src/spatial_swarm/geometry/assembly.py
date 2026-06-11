@@ -37,3 +37,20 @@ def assembles_exactly(
         assembled.update(coords)
 
     return assembled == transformed_target(fragments, transform)
+
+
+def assembles_committed_piece_set(
+    submitted: Mapping[str, set[Coord]],
+    expected_agent_ids: tuple[str, ...],
+) -> bool:
+    """Check full committed-piece participation without storing raw pieces."""
+
+    if set(submitted) != set(expected_agent_ids):
+        return False
+
+    assembled: set[Coord] = set()
+    for coords in submitted.values():
+        if assembled.intersection(coords):
+            return False
+        assembled.update(coords)
+    return True

@@ -107,6 +107,7 @@ def scenario_profile(scenario: str) -> ScenarioProfile:
         "stolen_signing_authority_only",
         "correct_geometry_wrong_agent_id",
         "all_but_one_valid_spatial_piece",
+        "verifier_snapshot_forgery",
     }:
         return ScenarioProfile(requires_spatial_gate=True)
     if canonical in {

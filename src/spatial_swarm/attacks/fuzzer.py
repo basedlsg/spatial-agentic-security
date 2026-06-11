@@ -152,8 +152,7 @@ class PacketFuzzer:
         agent_id: str,
         rng: random.Random,
     ) -> ProofPacket:
-        registration = gateway.registry.require(agent_id)
-        coords = set(challenge.transform.apply(registration.fragment.coords))
+        coords = set(challenge.transform.apply(gateway.sidecars[agent_id].fragment.coords))
         x, y, z = next(iter(coords))
         coords.remove((x, y, z))
         coords.add(((x + rng.randrange(1, gateway.grid.p)) % gateway.grid.p, y, z))
@@ -166,7 +165,6 @@ class PacketFuzzer:
         challenge: Challenge,
         agent_id: str,
     ) -> ProofPacket:
-        registration = gateway.registry.require(agent_id)
         other_message = gateway.freeze(
             message.sender_id,
             message.receiver_id,
@@ -174,7 +172,7 @@ class PacketFuzzer:
             nonce=f"{message.nonce}:fuzz-wrong-transform",
         )
         other_challenge = gateway.challenge(other_message)
-        coords = other_challenge.transform.apply(registration.fragment.coords)
+        coords = other_challenge.transform.apply(gateway.sidecars[agent_id].fragment.coords)
         return self._signed_response(gateway, message, challenge, agent_id, coords)
 
     def _signed_response(

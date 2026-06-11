@@ -15,9 +15,9 @@ from spatial_swarm.core.epoch import SwarmState
 from spatial_swarm.core.errors import FailureReason
 from spatial_swarm.core.message import FrozenMessage
 from spatial_swarm.core.registry import Registry
-from spatial_swarm.crypto.commitments import proof_commitment
+from spatial_swarm.crypto.commitments import fragment_commitment, proof_commitment
 from spatial_swarm.crypto.signatures import verify_payload
-from spatial_swarm.geometry.assembly import assembles_exactly
+from spatial_swarm.geometry.assembly import assembles_committed_piece_set
 from spatial_swarm.protocol.challenge import Challenge
 from spatial_swarm.protocol.ejection import Ejection
 from spatial_swarm.protocol.proof_packet import FragmentResponse, ProofPacket, packet_size_bytes
@@ -101,9 +101,19 @@ class Verifier:
         options: Optional[VerifierOptions] = None,
     ):
         self.registry = registry
-        self.private_key = private_key
+        self.private_key: Optional[PrivateKey] = private_key
         self.options = options or VerifierOptions()
         self._seen: set[tuple[str, str, str]] = set()
+        self._shutdown = False
+
+    @property
+    def shutdown_complete(self) -> bool:
+        return self._shutdown
+
+    def shutdown(self) -> None:
+        self._seen.clear()
+        self.private_key = None
+        self._shutdown = True
 
     def verify_round(
         self,
@@ -172,6 +182,8 @@ class Verifier:
 
         if self.registry.state != SwarmState.ACTIVE:
             return fail(FailureReason.SWARM_COLLAPSED, "agent_status", None)
+
+        inverse_transform = challenge.transform.inverse()
 
         for raw_packet in raw_packets:
             packets_started += 1
@@ -286,6 +298,14 @@ class Verifier:
                     packet.encrypted_fragment_response.encode("ascii"),
                     validate=True,
                 )
+                if self.private_key is None:
+                    return fail(
+                        FailureReason.DECRYPTION_FAILED,
+                        "decrypt",
+                        agent_id,
+                        proof_bytes=size,
+                        submission_number=packet.submission_number,
+                    )
                 plaintext = SealedBox(self.private_key).decrypt(encrypted)
                 decryptions_performed += 1
                 response = FragmentResponse.model_validate_json(plaintext)
@@ -337,9 +357,10 @@ class Verifier:
                     submission_number=packet.submission_number,
                 )
 
-            expected = challenge.transform.apply(registration.fragment.coords)
+            source_coords = inverse_transform.apply(coords)
+            source_commitment = fragment_commitment(agent_id, source_coords, registration.p)
             geometry_checks_performed += 1
-            if self.options.check_geometry and coords != expected:
+            if self.options.check_geometry and source_commitment != registration.fragment_commitment:
                 return fail(
                     FailureReason.WRONG_GEOMETRY,
                     "geometry",
@@ -368,10 +389,9 @@ class Verifier:
         if missing:
             return fail(FailureReason.MISSING_PACKET, "assembly", missing[0])
 
-        if self.options.check_assembly and not assembles_exactly(
+        if self.options.check_assembly and not assembles_committed_piece_set(
             submitted_coords,
-            self.registry.original_fragments(),
-            challenge.transform,
+            self.registry.original_agent_ids,
         ):
             return fail(FailureReason.ASSEMBLY_FAILED, "assembly", None)
 

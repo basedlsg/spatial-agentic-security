@@ -14,6 +14,7 @@ from spatial_swarm.attacks.valid_signature_agent import (
     ValidSignatureWrongGeometryAgent,
     ValidSignatureWrongMessageHashAgent,
     ValidSignatureWrongTransformAgent,
+    VerifierSnapshotForgeryAgent,
 )
 from spatial_swarm.attacks.wrong_message_agent import WrongMessageAgent
 
@@ -32,5 +33,6 @@ __all__ = [
     "ValidSignatureWrongGeometryAgent",
     "ValidSignatureWrongMessageHashAgent",
     "ValidSignatureWrongTransformAgent",
+    "VerifierSnapshotForgeryAgent",
     "WrongMessageAgent",
 ]

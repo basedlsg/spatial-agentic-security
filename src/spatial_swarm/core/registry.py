@@ -8,7 +8,6 @@ from typing import Iterable, Optional
 from nacl.signing import VerifyKey
 
 from spatial_swarm.core.epoch import SwarmState
-from spatial_swarm.geometry.fragment import Fragment
 from spatial_swarm.protocol.policies import ProofEnvelope
 
 
@@ -18,8 +17,33 @@ class AgentRegistration:
     verify_key: VerifyKey
     fragment_commitment: str
     envelope: ProofEnvelope
-    fragment: Fragment
+    fragment_size: int
+    p: int
     active: bool = True
+
+
+@dataclass(frozen=True)
+class PublicAgentRecord:
+    agent_id: str
+    verify_key: VerifyKey
+    fragment_commitment: str
+    envelope: ProofEnvelope
+    fragment_size: int
+    p: int
+    active: bool
+
+
+@dataclass(frozen=True)
+class VerifierPublicSnapshot:
+    epoch: str
+    state: SwarmState
+    agents: tuple[PublicAgentRecord, ...]
+
+    def require(self, agent_id: str) -> PublicAgentRecord:
+        for agent in self.agents:
+            if agent.agent_id == agent_id:
+                return agent
+        raise KeyError(agent_id)
 
 
 class Registry:
@@ -41,18 +65,23 @@ class Registry:
     def all_registrations(self) -> list[AgentRegistration]:
         return [self._registrations[agent_id] for agent_id in self.original_agent_ids]
 
-    def active_fragments(self) -> dict[str, Fragment]:
-        return {
-            agent_id: self._registrations[agent_id].fragment
-            for agent_id in self.original_agent_ids
-            if self._registrations[agent_id].active
-        }
-
-    def original_fragments(self) -> dict[str, Fragment]:
-        return {
-            agent_id: self._registrations[agent_id].fragment
-            for agent_id in self.original_agent_ids
-        }
+    def public_snapshot(self) -> VerifierPublicSnapshot:
+        return VerifierPublicSnapshot(
+            epoch=self.epoch,
+            state=self.state,
+            agents=tuple(
+                PublicAgentRecord(
+                    agent_id=registration.agent_id,
+                    verify_key=registration.verify_key,
+                    fragment_commitment=registration.fragment_commitment,
+                    envelope=registration.envelope,
+                    fragment_size=registration.fragment_size,
+                    p=registration.p,
+                    active=registration.active,
+                )
+                for registration in self.all_registrations()
+            ),
+        )
 
     def eject(self, agent_id: Optional[str]) -> None:
         if agent_id and agent_id in self._registrations:

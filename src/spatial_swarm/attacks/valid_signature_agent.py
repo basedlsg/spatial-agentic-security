@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import random
 from typing import Any
 
 from nacl.public import SealedBox
@@ -41,8 +42,7 @@ class ValidSignatureWrongGeometryAgent:
         challenge: Challenge,
     ) -> ProofPacket:
         target_registration = gateway.registry.require(self.target_agent_id)
-        source_registration = gateway.registry.require(self.source_agent_id)
-        wrong_coords = challenge.transform.apply(source_registration.fragment.coords)
+        wrong_coords = challenge.transform.apply(gateway.sidecars[self.source_agent_id].fragment.coords)
         response = FragmentResponse(
             agent_id=self.target_agent_id,
             message_id=message.message_id,
@@ -106,7 +106,7 @@ class StolenFragmentOnlyAgent:
         challenge: Challenge,
     ) -> ProofPacket:
         registration = gateway.registry.require(self.target_agent_id)
-        correct_coords = challenge.transform.apply(registration.fragment.coords)
+        correct_coords = challenge.transform.apply(gateway.sidecars[self.target_agent_id].fragment.coords)
         response = FragmentResponse(
             agent_id=self.target_agent_id,
             message_id=message.message_id,
@@ -163,7 +163,7 @@ class CorrectGeometryWrongAgentIdAgent:
         challenge: Challenge,
     ) -> ProofPacket:
         source_registration = gateway.registry.require(self.source_agent_id)
-        source_coords = challenge.transform.apply(source_registration.fragment.coords)
+        source_coords = challenge.transform.apply(gateway.sidecars[self.source_agent_id].fragment.coords)
         response = FragmentResponse(
             agent_id=self.source_agent_id,
             message_id=message.message_id,
@@ -216,7 +216,7 @@ class ValidSignatureWrongTransformAgent(ValidSignatureWrongGeometryAgent):
             nonce=f"{message.nonce}:wrong-transform",
         )
         other_challenge = gateway.challenge(other_message)
-        wrong_coords = other_challenge.transform.apply(target_registration.fragment.coords)
+        wrong_coords = other_challenge.transform.apply(gateway.sidecars[self.target_agent_id].fragment.coords)
         response = FragmentResponse(
             agent_id=self.target_agent_id,
             message_id=message.message_id,
@@ -262,7 +262,7 @@ class ValidSignatureWrongMessageHashAgent(ValidSignatureWrongGeometryAgent):
         challenge: Challenge,
     ) -> ProofPacket:
         target_registration = gateway.registry.require(self.target_agent_id)
-        correct_coords = challenge.transform.apply(target_registration.fragment.coords)
+        correct_coords = challenge.transform.apply(gateway.sidecars[self.target_agent_id].fragment.coords)
         wrong_message_id = "0" * 64
         response = FragmentResponse(
             agent_id=self.target_agent_id,
@@ -286,6 +286,76 @@ class ValidSignatureWrongMessageHashAgent(ValidSignatureWrongGeometryAgent):
                 wrong_message_id,
                 challenge.challenge_id,
                 correct_coords,
+            ),
+            "encrypted_fragment_response": base64.b64encode(encrypted).decode("ascii"),
+            "signature": "",
+            "submitted_at_ms": 0.0,
+        }
+        unsigned = ProofPacket(**fields)
+        fields["signature"] = sign_payload(
+            gateway.sidecars[self.target_agent_id].signing_key,
+            unsigned.signed_payload(),
+        )
+        return ProofPacket(**fields)
+
+
+class VerifierSnapshotForgeryAgent:
+    """Uses verifier public metadata and valid signing authority, but no piece."""
+
+    def __init__(self, target_agent_id: str, seed: int = 9901) -> None:
+        self.target_agent_id = target_agent_id
+        self.seed = seed
+
+    def replace_agent_packets(
+        self,
+        gateway: Gateway,
+        message: FrozenMessage,
+        challenge: Challenge,
+    ) -> list[ProofPacket]:
+        packets = gateway.collect_honest_packets(message, challenge)
+        malicious = self.packet(gateway, message, challenge)
+        return [malicious if packet.agent_id == self.target_agent_id else packet for packet in packets]
+
+    def packet(
+        self,
+        gateway: Gateway,
+        message: FrozenMessage,
+        challenge: Challenge,
+    ) -> ProofPacket:
+        snapshot = gateway.verifier_public_snapshot_after_setup()
+        record = snapshot.require(self.target_agent_id)
+        rng = random.Random(self.seed)
+        coords: set[tuple[int, int, int]] = set()
+        while len(coords) < record.fragment_size:
+            coords.add(
+                (
+                    rng.randrange(gateway.grid.p),
+                    rng.randrange(gateway.grid.p),
+                    rng.randrange(gateway.grid.p),
+                )
+            )
+        response = FragmentResponse(
+            agent_id=self.target_agent_id,
+            message_id=message.message_id,
+            challenge_id=challenge.challenge_id,
+            fragment_commitment=record.fragment_commitment,
+            coords=normalize_coords(coords),
+        )
+        encrypted = SealedBox(gateway.private_key.public_key).encrypt(
+            response.model_dump_json().encode("utf-8")
+        )
+        fields: dict[str, Any] = {
+            "agent_id": self.target_agent_id,
+            "epoch": gateway.epoch,
+            "message_id": message.message_id,
+            "challenge_id": challenge.challenge_id,
+            "proof_version": "v1",
+            "submission_number": 1,
+            "proof_commitment": proof_commitment(
+                self.target_agent_id,
+                message.message_id,
+                challenge.challenge_id,
+                coords,
             ),
             "encrypted_fragment_response": base64.b64encode(encrypted).decode("ascii"),
             "signature": "",

@@ -29,7 +29,7 @@ class RandomFakeAgent:
     def packet(self, gateway: Gateway, message: FrozenMessage, challenge: Challenge) -> ProofPacket:
         registration = gateway.registry.get(self.agent_id)
         rng = random.Random(self.seed)
-        fragment_size = registration.fragment.size if registration else 16
+        fragment_size = registration.fragment_size if registration else 16
         fragment_commitment = registration.fragment_commitment if registration else "0" * 64
         coords = [
             [rng.randrange(gateway.grid.p), rng.randrange(gateway.grid.p), rng.randrange(gateway.grid.p)]

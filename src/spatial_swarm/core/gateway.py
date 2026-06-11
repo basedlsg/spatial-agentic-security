@@ -9,15 +9,12 @@ from typing import Any, Callable, Optional, Sequence, Union
 from nacl.public import PrivateKey
 
 from spatial_swarm.core.agent import LogicalAgent
-from spatial_swarm.core.epoch import Epoch
 from spatial_swarm.core.message import FrozenMessage, freeze_message
-from spatial_swarm.core.registry import AgentRegistration, Registry
+from spatial_swarm.core.registry import Registry, VerifierPublicSnapshot
+from spatial_swarm.core.setup import EphemeralSetup, SetupReport
 from spatial_swarm.core.sidecar import Sidecar
-from spatial_swarm.crypto.keys import deterministic_signing_key, generate_gateway_private_key
 from spatial_swarm.geometry.finite_grid import FiniteGrid
-from spatial_swarm.geometry.fragment import generate_disjoint_fragments
 from spatial_swarm.protocol.challenge import Challenge, challenge_for_message
-from spatial_swarm.protocol.policies import estimate_envelope
 from spatial_swarm.protocol.proof_packet import ProofPacket
 from spatial_swarm.protocol.verifier import VerificationResult, Verifier, VerifierOptions
 
@@ -32,8 +29,11 @@ class Gateway:
     agents: dict[str, LogicalAgent]
     private_key: PrivateKey
     grid: FiniteGrid
-    verifier: Verifier
+    verifier_options: Optional[VerifierOptions] = None
     logger: Optional[Any] = None
+    setup_report: Optional[SetupReport] = None
+    active_verifier: Optional[Verifier] = None
+    last_verifier_shutdown: bool = True
 
     @classmethod
     def create_swarm(
@@ -46,50 +46,24 @@ class Gateway:
         logger: Optional[Any] = None,
         verifier_options: Optional[VerifierOptions] = None,
     ) -> "Gateway":
-        grid = FiniteGrid(p=p)
-        epoch = Epoch(index=1).epoch_id
-        private_key = generate_gateway_private_key(seed)
-        fragments = generate_disjoint_fragments(agent_count, fragment_size, seed, grid)
-
-        registrations: list[AgentRegistration] = []
-        sidecars: dict[str, Sidecar] = {}
-        for agent_id, fragment in fragments.items():
-            signing_key = deterministic_signing_key(seed, agent_id)
-            envelope = estimate_envelope(
-                agent_id=agent_id,
-                epoch=epoch,
-                fragment_size=fragment_size,
-                p=p,
-                timeout_ms=timeout_ms,
-            )
-            sidecar = Sidecar(
-                fragment=fragment,
-                signing_key=signing_key,
-                gateway_public_key=private_key.public_key,
-                epoch=epoch,
-                envelope=envelope,
-            )
-            registrations.append(
-                AgentRegistration(
-                    agent_id=agent_id,
-                    verify_key=sidecar.verify_key,
-                    fragment_commitment=sidecar.fragment_commitment,
-                    envelope=envelope,
-                    fragment=fragment,
-                )
-            )
-            sidecars[agent_id] = sidecar
-
-        registry = Registry(epoch=epoch, registrations=registrations)
-        verifier = Verifier(registry=registry, private_key=private_key, options=verifier_options)
+        setup = EphemeralSetup(
+            agent_count=agent_count,
+            fragment_size=fragment_size,
+            seed=seed,
+            p=p,
+            timeout_ms=timeout_ms,
+        )
+        artifacts = setup.run()
+        registry = Registry(epoch=artifacts.registry_epoch, registrations=artifacts.registrations)
         gateway = cls(
             registry=registry,
-            sidecars=sidecars,
+            sidecars=artifacts.sidecars,
             agents={},
-            private_key=private_key,
-            grid=grid,
-            verifier=verifier,
+            private_key=artifacts.private_key,
+            grid=artifacts.grid,
+            verifier_options=verifier_options,
             logger=logger,
+            setup_report=artifacts.report,
         )
         gateway.agents = {
             agent_id: LogicalAgent(agent_id=agent_id, gateway=gateway)
@@ -106,6 +80,9 @@ class Gateway:
 
     def challenge(self, message: FrozenMessage) -> Challenge:
         return challenge_for_message(message, self.grid.p)
+
+    def verifier_public_snapshot_after_setup(self) -> VerifierPublicSnapshot:
+        return self.registry.public_snapshot()
 
     def collect_honest_packets(
         self,
@@ -146,7 +123,19 @@ class Gateway:
         else:
             packets = list(packet_provider(self, message, challenge))
 
-        result = self.verifier.verify_round(message, challenge, packets)
+        verifier = Verifier(
+            registry=self.registry,
+            private_key=self.private_key,
+            options=self.verifier_options,
+        )
+        self.active_verifier = verifier
+        self.last_verifier_shutdown = False
+        try:
+            result = verifier.verify_round(message, challenge, packets)
+        finally:
+            verifier.shutdown()
+            self.last_verifier_shutdown = verifier.shutdown_complete
+            self.active_verifier = None
         if self.logger:
             self.logger.emit_many(event.to_log_dict(self.logger.run_id) for event in result.events)
             self.logger.emit(
@@ -168,7 +157,7 @@ class Gateway:
         from spatial_swarm.geometry.visualization import summarize_point_cloud
 
         transformed = {
-            agent_id: challenge.transform.apply(self.registry.require(agent_id).fragment.coords)
+            agent_id: challenge.transform.apply(self.sidecars[agent_id].fragment.coords)
             for agent_id in self.registry.original_agent_ids
         }
         path.write_text(summarize_point_cloud(transformed) + "\n", encoding="utf-8")
