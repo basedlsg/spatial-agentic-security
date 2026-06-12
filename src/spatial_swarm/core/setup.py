@@ -9,6 +9,7 @@ from nacl.public import PrivateKey
 from spatial_swarm.core.epoch import Epoch
 from spatial_swarm.core.registry import AgentRegistration
 from spatial_swarm.core.sidecar import Sidecar
+from spatial_swarm.core.sidecar_runtime import ProcessSidecarClient
 from spatial_swarm.crypto.keys import deterministic_signing_key, generate_gateway_private_key
 from spatial_swarm.geometry.finite_grid import Coord, FiniteGrid
 from spatial_swarm.geometry.fragment import Fragment, cut_puzzle, generate_full_puzzle
@@ -28,7 +29,7 @@ class SetupArtifacts:
     private_key: PrivateKey
     grid: FiniteGrid
     registrations: list[AgentRegistration]
-    sidecars: dict[str, Sidecar]
+    sidecars: dict[str, Sidecar | ProcessSidecarClient]
     report: SetupReport
 
 
@@ -42,11 +43,13 @@ class EphemeralSetup:
         seed: int,
         p: int,
         timeout_ms: float,
+        sidecar_runtime: str = "in_process",
     ) -> None:
         self.agent_count = agent_count
         self.fragment_size = fragment_size
         self.p = p
         self.timeout_ms = timeout_ms
+        self.sidecar_runtime = sidecar_runtime
         self._seed: int | None = seed
         self._full_puzzle: set[Coord] | None = None
         self._fragments: dict[str, Fragment] | None = None
@@ -88,7 +91,7 @@ class EphemeralSetup:
         )
 
         registrations: list[AgentRegistration] = []
-        sidecars: dict[str, Sidecar] = {}
+        sidecars: dict[str, Sidecar | ProcessSidecarClient] = {}
         for agent_id, fragment in self._fragments.items():
             signing_key = deterministic_signing_key(self._seed, agent_id)
             envelope = estimate_envelope(
@@ -115,7 +118,7 @@ class EphemeralSetup:
                     p=fragment.p,
                 )
             )
-            sidecars[agent_id] = sidecar
+            sidecars[agent_id] = self._sidecar_handle(sidecar)
 
         self._erase()
         return SetupArtifacts(
@@ -136,3 +139,10 @@ class EphemeralSetup:
         self._fragments = None
         self._seed = None
         self._shutdown = True
+
+    def _sidecar_handle(self, sidecar: Sidecar) -> Sidecar | ProcessSidecarClient:
+        if self.sidecar_runtime == "in_process":
+            return sidecar
+        if self.sidecar_runtime == "process":
+            return ProcessSidecarClient.start(sidecar)
+        raise ValueError(f"unknown sidecar_runtime {self.sidecar_runtime!r}")

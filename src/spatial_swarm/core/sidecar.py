@@ -44,6 +44,35 @@ class Sidecar:
     def verify_key(self):
         return self.signing_key.verify_key
 
+    def health_check(self) -> dict[str, str]:
+        return {"status": "ok", "agent_id": self.agent_id}
+
+    def submit_proof(
+        self,
+        message: FrozenMessage,
+        challenge: Challenge,
+        submission_number: int = 1,
+        submitted_at_ms: float = 0.0,
+        override_message_id: Optional[str] = None,
+        override_challenge_id: Optional[str] = None,
+    ) -> ProofPacket:
+        return self.build_proof(
+            message=message,
+            challenge=challenge,
+            submission_number=submission_number,
+            submitted_at_ms=submitted_at_ms,
+            override_message_id=override_message_id,
+            override_challenge_id=override_challenge_id,
+        )
+
+    def rotate_epoch(self, epoch: str, envelope: Optional[ProofEnvelope] = None) -> None:
+        self.epoch = epoch
+        if envelope is not None:
+            self.envelope = envelope
+
+    def shutdown(self) -> None:
+        pass
+
     def build_proof(
         self,
         message: FrozenMessage,

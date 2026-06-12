@@ -13,6 +13,7 @@ from spatial_swarm.core.message import FrozenMessage, freeze_message
 from spatial_swarm.core.registry import Registry, VerifierPublicSnapshot
 from spatial_swarm.core.setup import EphemeralSetup, SetupReport
 from spatial_swarm.core.sidecar import Sidecar
+from spatial_swarm.core.sidecar_runtime import ProcessSidecarClient
 from spatial_swarm.geometry.finite_grid import FiniteGrid
 from spatial_swarm.protocol.challenge import Challenge, challenge_for_message
 from spatial_swarm.protocol.proof_packet import ProofPacket
@@ -25,7 +26,7 @@ PacketProvider = Callable[["Gateway", FrozenMessage, Challenge], Sequence[Union[
 @dataclass
 class Gateway:
     registry: Registry
-    sidecars: dict[str, Sidecar]
+    sidecars: dict[str, Sidecar | ProcessSidecarClient]
     agents: dict[str, LogicalAgent]
     private_key: PrivateKey
     grid: FiniteGrid
@@ -34,6 +35,7 @@ class Gateway:
     setup_report: Optional[SetupReport] = None
     active_verifier: Optional[Verifier] = None
     last_verifier_shutdown: bool = True
+    sidecar_runtime: str = "in_process"
 
     @classmethod
     def create_swarm(
@@ -45,6 +47,7 @@ class Gateway:
         timeout_ms: float = 50.0,
         logger: Optional[Any] = None,
         verifier_options: Optional[VerifierOptions] = None,
+        sidecar_runtime: str = "in_process",
     ) -> "Gateway":
         setup = EphemeralSetup(
             agent_count=agent_count,
@@ -52,6 +55,7 @@ class Gateway:
             seed=seed,
             p=p,
             timeout_ms=timeout_ms,
+            sidecar_runtime=sidecar_runtime,
         )
         artifacts = setup.run()
         registry = Registry(epoch=artifacts.registry_epoch, registrations=artifacts.registrations)
@@ -64,6 +68,7 @@ class Gateway:
             verifier_options=verifier_options,
             logger=logger,
             setup_report=artifacts.report,
+            sidecar_runtime=sidecar_runtime,
         )
         gateway.agents = {
             agent_id: LogicalAgent(agent_id=agent_id, gateway=gateway)
@@ -91,9 +96,15 @@ class Gateway:
         submitted_at_ms: float = 0.0,
     ) -> list[ProofPacket]:
         return [
-            self.sidecars[agent_id].build_proof(message, challenge, submitted_at_ms=submitted_at_ms)
+            self.sidecars[agent_id].submit_proof(message, challenge, submitted_at_ms=submitted_at_ms)
             for agent_id in self.registry.original_agent_ids
         ]
+
+    def shutdown_sidecars(self) -> None:
+        for sidecar in self.sidecars.values():
+            shutdown = getattr(sidecar, "shutdown", None)
+            if shutdown is not None:
+                shutdown()
 
     def send(
         self,
@@ -156,6 +167,8 @@ class Gateway:
     def write_demo_visualization_summary(self, path: Path, message: FrozenMessage, challenge: Challenge) -> None:
         from spatial_swarm.geometry.visualization import summarize_point_cloud
 
+        if self.sidecar_runtime != "in_process":
+            raise RuntimeError("visualization summary requires in-process sidecar material")
         transformed = {
             agent_id: challenge.transform.apply(self.sidecars[agent_id].fragment.coords)
             for agent_id in self.registry.original_agent_ids

@@ -638,6 +638,82 @@ def run_fuzz_replay_mutation(
     )
 
 
+def run_process_sidecar_honest(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = Gateway.create_swarm(
+        agent_count=agent_count,
+        fragment_size=fragment_size,
+        seed=seed,
+        logger=logger,
+        verifier_options=_ACTIVE_VERIFIER_OPTIONS,
+        sidecar_runtime="process",
+    )
+    try:
+        return gateway.send("agent_001", "agent_002", {"type": "demo", "body": "process honest"})
+    finally:
+        gateway.shutdown_sidecars()
+
+
+def run_process_sidecar_fake_agent(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = Gateway.create_swarm(
+        agent_count=agent_count,
+        fragment_size=fragment_size,
+        seed=seed,
+        logger=logger,
+        verifier_options=_ACTIVE_VERIFIER_OPTIONS,
+        sidecar_runtime="process",
+    )
+    try:
+        target_agent_id = _target_agent_id(agent_count, "middle")
+        fake = RandomFakeAgent(target_agent_id, seed=seed + 42)
+        return gateway.send(
+            "agent_001",
+            "agent_002",
+            {"type": "demo", "body": "process fake replacement"},
+            packet_provider=fake.replace_agent_packets,
+        )
+    finally:
+        gateway.shutdown_sidecars()
+
+
+def run_process_sidecar_replay(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    gateway = Gateway.create_swarm(
+        agent_count=agent_count,
+        fragment_size=fragment_size,
+        seed=seed,
+        logger=logger,
+        verifier_options=_ACTIVE_VERIFIER_OPTIONS,
+        sidecar_runtime="process",
+    )
+    try:
+        old_message = gateway.freeze("agent_001", "agent_002", {"body": "old"}, nonce="old")
+        old_challenge = gateway.challenge(old_message)
+        old_packets = gateway.collect_honest_packets(old_message, old_challenge)
+        return gateway.send(
+            "agent_001",
+            "agent_002",
+            {"body": "new process replay"},
+            nonce="new",
+            packet_provider=lambda _gateway, _message, _challenge: old_packets,
+        )
+    finally:
+        gateway.shutdown_sidecars()
+
+
 SCENARIOS: dict[str, Scenario] = {
     "honest": run_honest,
     "missing": run_missing,
@@ -680,6 +756,9 @@ SCENARIOS: dict[str, Scenario] = {
     "fuzz_malformed_packet": run_fuzz_malformed_packet,
     "fuzz_mixed_packet_set": run_fuzz_mixed_packet_set,
     "fuzz_replay_mutation": run_fuzz_replay_mutation,
+    "process_sidecar_honest": run_process_sidecar_honest,
+    "process_sidecar_fake_agent": run_process_sidecar_fake_agent,
+    "process_sidecar_replay": run_process_sidecar_replay,
 }
 
 
@@ -763,6 +842,11 @@ SCENARIO_GROUPS: dict[str, list[str]] = {
         "fuzz_mixed_packet_set",
         "fuzz_replay_mutation",
     ],
+    "v0_5_process_sidecar_smoke": [
+        "process_sidecar_honest",
+        "process_sidecar_fake_agent",
+        "process_sidecar_replay",
+    ],
 }
 
 
@@ -825,6 +909,11 @@ BENCHMARK_PRESETS: dict[str, dict[str, int | str]] = {
     "fuzz_10000": {"scenario": "fuzz_10000", "agents": 8, "attempts": 10000},
     "v0_3_focused_10000": {"scenario": "v0_3_focused_10000", "agents": 8, "attempts": 10000},
     "v0_4_focused_10000": {"scenario": "v0_4_focused_10000", "agents": 8, "attempts": 10000},
+    "v0_5_process_sidecar_smoke": {
+        "scenario": "v0_5_process_sidecar_smoke",
+        "agents": 4,
+        "attempts": 10,
+    },
 }
 
 
