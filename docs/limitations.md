@@ -10,22 +10,26 @@ USAG v1 is narrow by design.
 - It assumes sidecar memory is not accessible to the LLM brain.
 - It assumes the host is not compromised.
 
-## Privacy Limits
+## Privacy And Custody Limits
 
-The v1 verifier holds trusted fragment records and decrypts transformed coordinates.
-This is acceptable for a protocol simulator, but not for a production privacy claim.
+USAG v0.4 removes raw puzzle-piece custody from the verifier-visible registry. Setup
+creates the full puzzle, cuts it into sidecar pieces, records fingerprints, deletes the
+full puzzle, deletes the seed, and shuts down. The verifier checks submitted proofs
+against fingerprints instead of stored raw fragments.
 
-USAG v0.3 assumes a trusted gateway/verifier. The verifier stores raw fragments and can
-bypass or forge verification if compromised. Current results test fail-closed
-communication under this assumption.
+This is not a zero-knowledge privacy claim. The local simulator still co-locates gateway,
+sidecars, and verifier in one process graph for testability. Sidecars hold raw pieces,
+and the temporary verifier decrypts submitted transformed coordinates during a message
+check. A compromised host, gateway process, or sidecar can still bypass or forge protocol
+behavior.
 
 Future privacy progression:
 
 ```text
-v1: trusted verifier checks registered raw fragments
-v2: verifier stores commitments and checks responses against commitments
-v3: Merkle or vector commitments
-v4: zero-knowledge proof of valid geometric transform
+v0.3: trusted verifier checks registered raw fragments
+v0.4: verifier stores commitments and checks responses against commitments
+v0.5: sidecar process isolation
+future: Merkle/vector commitments or zero-knowledge proof of valid geometric transform
 ```
 
 ## Research Limits

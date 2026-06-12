@@ -10,13 +10,19 @@ Subtitle:
 
 1. Spawn `N` logical agents.
 2. Generate a canonical finite 3D grid `F_p^3`.
-3. Generate `N` disjoint private coordinate fragments.
-4. Give each sidecar exactly one fragment.
-5. Register every agent with the gateway:
+3. Setup creates the full puzzle.
+4. Setup cuts the puzzle into `N` disjoint private coordinate fragments.
+5. Setup gives each sidecar exactly one fragment.
+6. Setup records each fragment fingerprint.
+7. Setup deletes the full puzzle.
+8. Setup deletes the seed.
+9. Setup shuts down.
+10. Register every agent with verifier-visible metadata:
    - `agent_id`
    - sidecar verify key
    - fragment commitment
-   - trusted verifier fragment record for v1
+   - fragment size
+   - finite-field modulus
    - proof-size envelope
    - timeout envelope
    - `max_submissions = 1`
@@ -40,10 +46,12 @@ For every attempted communication:
 5. The challenge generates an invertible affine transform over `F_p^3`.
 6. Every sidecar receives the frozen message and challenge.
 7. Every sidecar submits exactly one signed proof packet.
-8. The verifier validates identity, epoch, message, challenge, budget, timing, signature,
-   encrypted response, geometry, and full assembly.
-9. If all `N` original fragments assemble, the message is released.
-10. Otherwise, the message is blocked and the swarm collapses.
+8. A temporary verifier starts for the message.
+9. The verifier validates identity, epoch, message, challenge, budget, timing, signature,
+   encrypted response, fingerprint-backed geometry, and full participation.
+10. The temporary verifier deletes its memory and shuts down.
+11. If all `N` original committed pieces are present and valid, the message is released.
+12. Otherwise, the message is blocked and the swarm collapses.
 
 ## Geometry
 
@@ -96,9 +104,9 @@ The verifier checks:
 11. encrypted response decrypts and parses
 12. response binds to agent, message, and challenge
 13. proof commitment matches transformed coordinates
-14. transformed coordinates match the registered fragment under `T_C`
+14. inverse-transformed coordinates hash to the registered fragment commitment
 15. every original agent submitted
-16. all transformed fragments assemble into the target object
+16. all submitted transformed pieces are disjoint
 
 ## Failure Behavior
 

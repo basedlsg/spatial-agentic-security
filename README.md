@@ -52,7 +52,7 @@ not include raw fragments, private signing keys, or decrypted sidecar payloads.
 - real verifier and assembly checks
 - strict fail-closed swarm collapse on any failure
 - adversaries for fake, replay, wrong-message, malformed, slow, duplicate, over-budget,
-  stolen-fragment, and partial-swarm attacks
+  stolen-fragment, verifier-snapshot-forgery, and partial-swarm attacks
 - baseline comparison modes for no gate, sender-signature-only,
   unanimous-signature, and USAG spatial gate
 - ablation modes that disable message binding, sender/receiver binding,
@@ -73,13 +73,17 @@ under stated configuration, for example:
 
 The system is about membership and communication authorization, not semantic truth.
 
-## Trusted Verifier Assumption
+## Trusted Gateway And Sidecar Assumption
 
-USAG v1 assumes a trusted gateway/verifier. The verifier stores raw fragment material and
-commitments in the registry, decrypts submitted proof packets, and compares transformed
-coordinates against registered fragments. A compromised gateway/verifier can forge,
-bypass, or falsely reject communication. This prototype evaluates fail-closed
-communication under a trusted-verifier assumption, not verifier-compromise resistance.
+USAG v0.4 uses an ephemeral setup and a commitment verifier. Setup creates the full
+puzzle, cuts it into sidecar pieces, records piece fingerprints, then deletes the full
+puzzle and seed. The verifier-visible registry stores public keys, piece fingerprints,
+and proof rules, not raw pieces.
+
+This is still a local simulator with trusted gateway and sidecar assumptions. Sidecars
+hold raw pieces, and the gateway/verifier decrypts submitted proof packets during a
+temporary message check. A compromised host, gateway process, or sidecar can still forge,
+bypass, or falsely reject communication.
 
 ## Repository Map
 
@@ -106,6 +110,7 @@ uv run usag-run --scenario run_all --agents 8 --fragment-size 16 --attempts 3
 uv run spatial-swarm benchmark honest_1024
 uv run spatial-swarm benchmark attack_scale_1024
 uv run spatial-swarm benchmark v0_3_focused_10000
+uv run spatial-swarm benchmark v0_4_focused_10000 --attempts=1000
 ```
 
 The project supports Python 3.9+ because the current local system Python is 3.9.6.
@@ -115,4 +120,5 @@ Current clean benchmark summaries are in:
 ```text
 docs/results_v0_2.md
 docs/results_v0_3.md
+docs/results_v0_4.md
 ```
