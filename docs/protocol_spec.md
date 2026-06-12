@@ -87,6 +87,34 @@ Each sidecar returns:
 `encrypted_fragment_response` contains the message-bound transformed coordinates and is
 sealed to the verifier. It is not written to logs.
 
+## Sidecar Runtime
+
+The default simulator can keep sidecars in process for fast high-volume tests. USAG v0.5
+also supports process-backed sidecars. In process mode, the parent process holds only a
+restricted client and the child process owns the raw fragment and signing key.
+
+Allowed sidecar API:
+
+```text
+health_check
+submit_proof
+rotate_epoch
+shutdown
+```
+
+Not exposed by the process client:
+
+```text
+fragment
+coords
+signing_key
+private_key
+show_fragment
+show_private_key
+show_seed
+arbitrary sign/decrypt
+```
+
 ## Verification Order
 
 The verifier checks:

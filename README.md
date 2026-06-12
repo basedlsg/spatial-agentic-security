@@ -45,6 +45,7 @@ not include raw fragments, private signing keys, or decrypted sidecar payloads.
 - message-bound challenge generation
 - invertible affine transforms per message
 - private sidecars that hold fragments outside the logical agent
+- optional process-backed sidecars with a minimal proof API
 - Ed25519 signatures using PyNaCl
 - sealed encrypted fragment responses using PyNaCl
 - one submission per agent per message
@@ -85,6 +86,12 @@ hold raw pieces, and the gateway/verifier decrypts submitted proof packets durin
 temporary message check. A compromised host, gateway process, or sidecar can still forge,
 bypass, or falsely reject communication.
 
+USAG v0.5 adds an optional process sidecar runtime. With
+`sidecar_runtime = "process"`, the parent process receives a restricted client exposing
+only `health_check`, `submit_proof`, `rotate_epoch`, and `shutdown`; raw fragments and
+private keys remain in the child sidecar process. The default stress benchmark path still
+uses in-process sidecars to avoid spawning thousands of local processes.
+
 ## Repository Map
 
 ```text
@@ -111,6 +118,7 @@ uv run spatial-swarm benchmark honest_1024
 uv run spatial-swarm benchmark attack_scale_1024
 uv run spatial-swarm benchmark v0_3_focused_10000
 uv run spatial-swarm benchmark v0_4_focused_10000 --attempts=1000
+uv run spatial-swarm benchmark v0_5_process_sidecar_smoke
 ```
 
 The project supports Python 3.9+ because the current local system Python is 3.9.6.
@@ -121,4 +129,5 @@ Current clean benchmark summaries are in:
 docs/results_v0_2.md
 docs/results_v0_3.md
 docs/results_v0_4.md
+docs/results_v0_5.md
 ```

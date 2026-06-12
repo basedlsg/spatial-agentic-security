@@ -17,19 +17,21 @@ creates the full puzzle, cuts it into sidecar pieces, records fingerprints, dele
 full puzzle, deletes the seed, and shuts down. The verifier checks submitted proofs
 against fingerprints instead of stored raw fragments.
 
-This is not a zero-knowledge privacy claim. The local simulator still co-locates gateway,
-sidecars, and verifier in one process graph for testability. Sidecars hold raw pieces,
-and the temporary verifier decrypts submitted transformed coordinates during a message
-check. A compromised host, gateway process, or sidecar can still bypass or forge protocol
-behavior.
+USAG v0.5 adds an optional process sidecar runtime with a restricted parent-visible API.
+This is still not a zero-knowledge privacy claim or hardened sandboxing claim. The
+process sidecar is a local child process, not a container, enclave, or OS isolation
+boundary against a compromised host. Sidecars hold raw pieces, and the temporary verifier
+decrypts submitted transformed coordinates during a message check. A compromised host,
+gateway process, or sidecar can still bypass or forge protocol behavior.
 
 Future privacy progression:
 
 ```text
 v0.3: trusted verifier checks registered raw fragments
 v0.4: verifier stores commitments and checks responses against commitments
-v0.5: sidecar process isolation
-future: Merkle/vector commitments or zero-knowledge proof of valid geometric transform
+v0.5: optional process sidecars with a minimal proof API
+future: container/TEE sidecars, Merkle/vector commitments, or zero-knowledge proof of
+        valid geometric transform
 ```
 
 ## Research Limits

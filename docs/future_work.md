@@ -4,8 +4,9 @@
 
 ```text
 USAG v0.3: baselines, ablations, fuzzing, and 10,000-attempt focused benchmark
-USAG v0.4: LLM forgery benchmark
-USAG v0.5: live four-agent workflow integration
+USAG v0.4: ephemeral setup and commitment verifier
+USAG v0.5: process sidecar runtime and minimal sidecar API
+USAG v0.6: live four-agent workflow integration
 ```
 
 v0.3 completion criteria:
@@ -25,7 +26,7 @@ v0.3 completion criteria:
 
 ## Sidecar Hardening
 
-v1 sidecar:
+v0.4 sidecar:
 
 ```text
 sidecar stores raw fragment
@@ -34,18 +35,17 @@ LLM never sees either
 gateway/verifier is trusted
 ```
 
-v2 sidecar:
+v0.5 sidecar:
 
 ```text
 separate process
 narrow local API
 refuses raw-fragment disclosure
-accepts proof requests only from gateway
+proof requests flow through the parent gateway client
 logs no secrets
-rate-limits proof requests
 ```
 
-v3 sidecar:
+future sidecar:
 
 ```text
 Docker container
@@ -53,9 +53,10 @@ network only to gateway
 read-only filesystem
 memory and CPU limits
 no shell access from LLM
+rate-limits proof requests
 ```
 
-v4 sidecar:
+future verifier:
 
 ```text
 TEE or enclave-style key storage
