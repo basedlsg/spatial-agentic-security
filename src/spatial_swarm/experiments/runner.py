@@ -26,7 +26,18 @@ from spatial_swarm.attacks.valid_signature_agent import (
     VerifierSnapshotForgeryAgent,
 )
 from spatial_swarm.attacks.wrong_message_agent import WrongMessageAgent
+from spatial_swarm.attacks.forgery_harness import (
+    AI_FORGERY_KINDS,
+    POSITIVE_CONTROL_ORDER,
+    SNAPSHOT_FORGERY_KINDS,
+    AIForgeryProvider,
+    ForgeryOutcome,
+    programmatic_provider,
+    run_forgery_round,
+)
 from spatial_swarm.core.gateway import Gateway
+from spatial_swarm.core.sidecar_runtime import SidecarRuntimeError
+from spatial_swarm.experiments.redaction import redaction_report
 from spatial_swarm.experiments.baselines import (
     BASELINE_MODES,
     BaselineResult,
@@ -714,6 +725,102 @@ def run_process_sidecar_replay(
         gateway.shutdown_sidecars()
 
 
+def run_process_sidecar_shutdown(
+    agent_count: int,
+    fragment_size: int,
+    seed: int,
+    logger: Optional[RunLogger],
+) -> VerificationResult:
+    """Shut down process sidecars, then confirm a later send is blocked.
+
+    A "pass" here would mean a message released after the sidecars were torn
+    down, so 0 passes is the desired outcome (the request fails closed).
+    """
+
+    gateway = Gateway.create_swarm(
+        agent_count=agent_count,
+        fragment_size=fragment_size,
+        seed=seed,
+        logger=logger,
+        verifier_options=_ACTIVE_VERIFIER_OPTIONS,
+        sidecar_runtime="process",
+    )
+    gateway.shutdown_sidecars()
+    try:
+        result = gateway.send("agent_001", "agent_002", {"body": "post shutdown"})
+    except SidecarRuntimeError:
+        return VerificationResult(
+            passed=False,
+            released_message=None,
+            failure_reason="sidecar_shutdown_enforced",
+            ejection=None,
+            collapsed=True,
+            latency_ms=0.0,
+            proof_bytes_total=0,
+            events=[],
+        )
+    finally:
+        gateway.shutdown_sidecars()
+    return result
+
+
+def _summarize_forgery(outcomes: list[ForgeryOutcome], kind: str) -> dict[str, object]:
+    attempts = len(outcomes)
+    reasons: dict[str, int] = {}
+    stages: dict[str, int] = {}
+    for outcome in outcomes:
+        if outcome.failure_reason:
+            reasons[outcome.failure_reason] = reasons.get(outcome.failure_reason, 0) + 1
+        if outcome.failure_stage:
+            stages[outcome.failure_stage] = stages.get(outcome.failure_stage, 0) + 1
+    first = outcomes[0]
+    return {
+        "kind": kind,
+        "is_positive_control": first.is_positive_control,
+        "capabilities": first.capabilities,
+        "model": first.model,
+        "provider": first.provider,
+        "attempts": attempts,
+        "message_passed": sum(1 for o in outcomes if o.message_passed),
+        "secret_extracted": sum(1 for o in outcomes if o.secret_extracted),
+        "raw_secret_in_view": sum(1 for o in outcomes if o.raw_secret_in_view),
+        "verifier_crashes": sum(1 for o in outcomes if o.verifier_crashed),
+        "failure_reasons": reasons,
+        "failure_stages": stages,
+        "inference_methods": sorted({o.inference_method for o in outcomes}),
+    }
+
+
+def run_forgery_matrix(
+    kinds: list[str],
+    agent_count: int,
+    fragment_size: int,
+    attempts: int,
+    seed: int,
+    logger: Optional[RunLogger],
+    provider: AIForgeryProvider = programmatic_provider,
+) -> dict[str, object]:
+    by_kind: dict[str, object] = {}
+    sample_attempts: list[dict[str, object]] = []
+    for kind in kinds:
+        outcomes: list[ForgeryOutcome] = []
+        for index in range(attempts):
+            outcome = run_forgery_round(
+                agent_count=agent_count,
+                fragment_size=fragment_size,
+                seed=seed + index,
+                kind=kind,
+                provider=provider,
+            )
+            outcomes.append(outcome)
+            if logger is not None:
+                logger.emit({"event_type": "forgery_attempt", **outcome.to_log_dict()})
+            if index == 0:
+                sample_attempts.append(outcome.to_log_dict())
+        by_kind[kind] = _summarize_forgery(outcomes, kind)
+    return {"kinds": list(kinds), "by_kind": by_kind, "sample_attempts": sample_attempts}
+
+
 SCENARIOS: dict[str, Scenario] = {
     "honest": run_honest,
     "missing": run_missing,
@@ -759,6 +866,7 @@ SCENARIOS: dict[str, Scenario] = {
     "process_sidecar_honest": run_process_sidecar_honest,
     "process_sidecar_fake_agent": run_process_sidecar_fake_agent,
     "process_sidecar_replay": run_process_sidecar_replay,
+    "process_sidecar_shutdown": run_process_sidecar_shutdown,
 }
 
 
@@ -847,6 +955,25 @@ SCENARIO_GROUPS: dict[str, list[str]] = {
         "process_sidecar_fake_agent",
         "process_sidecar_replay",
     ],
+    "v0_6_focused": [
+        "honest",
+        "fake_agent",
+        "unregistered_fake_agent",
+        "replay",
+        "wrong_message",
+        "valid_signature_wrong_geometry",
+        "valid_signature_wrong_transform",
+        "stolen_signing_authority_only",
+        "stolen_fragment_only",
+        "correct_geometry_wrong_agent_id",
+        "verifier_snapshot_forgery",
+    ],
+    "v0_6_process_sidecar": [
+        "process_sidecar_honest",
+        "process_sidecar_fake_agent",
+        "process_sidecar_replay",
+        "process_sidecar_shutdown",
+    ],
 }
 
 
@@ -913,6 +1040,18 @@ BENCHMARK_PRESETS: dict[str, dict[str, int | str]] = {
         "scenario": "v0_5_process_sidecar_smoke",
         "agents": 4,
         "attempts": 10,
+    },
+    "v0_6_focused": {"scenario": "v0_6_focused", "agents": 8, "attempts": 1000},
+    "v0_6_process_sidecar": {
+        "scenario": "v0_6_process_sidecar",
+        "agents": 4,
+        "attempts": 100,
+    },
+    "v0_6_ai_forgery": {"scenario": "ai_forgery_matrix", "agents": 4, "attempts": 100},
+    "v0_6_snapshot_forgery": {
+        "scenario": "snapshot_forgery_matrix",
+        "agents": 4,
+        "attempts": 100,
     },
 }
 
@@ -1010,7 +1149,12 @@ def run_experiment(
     seed: int,
     output_root: Path,
 ) -> Path:
-    special_scenarios = {"baseline_matrix", "ablation_matrix"}
+    special_scenarios = {
+        "baseline_matrix",
+        "ablation_matrix",
+        "ai_forgery_matrix",
+        "snapshot_forgery_matrix",
+    }
     if scenario in special_scenarios:
         scenario_names: list[str] = []
     elif scenario == "run_all":
@@ -1080,6 +1224,39 @@ def run_experiment(
             + "\n",
             encoding="utf-8",
         )
+        return run_dir
+
+    if scenario in {"ai_forgery_matrix", "snapshot_forgery_matrix"}:
+        if scenario == "ai_forgery_matrix":
+            kinds = [*AI_FORGERY_KINDS, *POSITIVE_CONTROL_ORDER]
+            result_key = "ai_forgery"
+        else:
+            kinds = [*SNAPSHOT_FORGERY_KINDS, *POSITIVE_CONTROL_ORDER]
+            result_key = "snapshot_forgery"
+        matrix = run_forgery_matrix(
+            kinds,
+            agent_count,
+            fragment_size,
+            attempts,
+            seed,
+            logger,
+        )
+        metrics = {
+            "config": config,
+            result_key: matrix,
+            "resource_use": process_resource_use(),
+        }
+        write_metrics(run_dir / "metrics.json", metrics)
+        (run_dir / "summary.md").write_text(
+            f"# Run Summary: {scenario}\n\n"
+            + json.dumps(matrix["by_kind"], indent=2, sort_keys=True)
+            + "\n",
+            encoding="utf-8",
+        )
+        # Scan the complete artifact set (metrics, summary, events, env, git)
+        # before writing the report itself, so the report never scans its own
+        # marker list.
+        write_metrics(run_dir / "redaction.json", redaction_report(run_dir))
         return run_dir
 
     all_metrics: dict[str, object] = {"config": config, "scenarios": {}}
