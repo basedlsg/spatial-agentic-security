@@ -92,6 +92,17 @@ only `health_check`, `submit_proof`, `rotate_epoch`, and `shutdown`; raw fragmen
 private keys remain in the child sidecar process. The default stress benchmark path still
 uses in-process sidecars to avoid spawning thousands of local processes.
 
+USAG v0.6 adds a forgery harness and a systematic redaction scanner. Snapshot-boundary
+attackers (verifier public state, prior packets, run-artifact directory) and AI/inference
+attackers (access levels 0-3) run through one mechanism. The default attacker is a
+deterministic optimal-programmatic upper bound: forging reduces to a SHA-256 preimage, an
+Ed25519 forgery, and an X25519 sealed-box decryption, so no model with the same access can
+do better. A pluggable provider records raw model output unmodified. Two positive controls
+(geometry leak, gateway-key compromise) deliberately break through, proving the harness
+detects real forgeries and that USAG's hardness is cryptographic, not "AI cannot solve a 3D
+puzzle". The transform is public and invertible; the protection is the commitment,
+encryption, and signature, not the geometry.
+
 ## Repository Map
 
 ```text
@@ -119,6 +130,10 @@ uv run spatial-swarm benchmark attack_scale_1024
 uv run spatial-swarm benchmark v0_3_focused_10000
 uv run spatial-swarm benchmark v0_4_focused_10000 --attempts=1000
 uv run spatial-swarm benchmark v0_5_process_sidecar_smoke
+uv run spatial-swarm benchmark v0_6_ai_forgery
+uv run spatial-swarm benchmark v0_6_snapshot_forgery
+uv run spatial-swarm benchmark v0_6_process_sidecar
+uv run spatial-swarm benchmark v0_6_focused
 ```
 
 The project supports Python 3.9+ because the current local system Python is 3.9.6.
@@ -130,4 +145,5 @@ docs/results_v0_2.md
 docs/results_v0_3.md
 docs/results_v0_4.md
 docs/results_v0_5.md
+docs/results_v0_6.md
 ```
