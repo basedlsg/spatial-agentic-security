@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import platform
@@ -106,6 +107,15 @@ def read_events(path: Path) -> list[dict[str, Any]]:
 
 def write_metrics(path: Path, metrics: dict[str, Any]) -> None:
     path.write_text(json.dumps(metrics, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+
+def write_metrics_and_digest(path: Path, metrics: dict[str, Any]) -> str:
+    """Write metrics and a sibling `<name>.sha256` binding the file's bytes."""
+
+    write_metrics(path, metrics)
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    path.with_name(path.name + ".sha256").write_text(digest + "\n", encoding="utf-8")
+    return digest
 
 
 def write_summary(path: Path, metrics: dict[str, Any]) -> None:

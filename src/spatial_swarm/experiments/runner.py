@@ -49,6 +49,7 @@ from spatial_swarm.experiments.metrics import (
     process_resource_use,
     summarize_results,
     write_metrics,
+    write_metrics_and_digest,
     write_summary,
 )
 from spatial_swarm.experiments.report import (
@@ -1196,7 +1197,7 @@ def run_experiment(
             ),
             "resource_use": process_resource_use(),
         }
-        write_metrics(run_dir / "metrics.json", metrics)
+        write_metrics_and_digest(run_dir / "metrics.json", metrics)
         (run_dir / "summary.md").write_text(
             "# Run Summary: baseline_matrix\n\n"
             + json.dumps(metrics["baseline_comparison"]["summary"], indent=2, sort_keys=True)
@@ -1217,7 +1218,7 @@ def run_experiment(
             ),
             "resource_use": process_resource_use(),
         }
-        write_metrics(run_dir / "metrics.json", metrics)
+        write_metrics_and_digest(run_dir / "metrics.json", metrics)
         (run_dir / "summary.md").write_text(
             "# Run Summary: ablation_matrix\n\n"
             + json.dumps(metrics["ablation_comparison"]["scenarios"], indent=2, sort_keys=True)
@@ -1246,7 +1247,7 @@ def run_experiment(
             result_key: matrix,
             "resource_use": process_resource_use(),
         }
-        write_metrics(run_dir / "metrics.json", metrics)
+        write_metrics_and_digest(run_dir / "metrics.json", metrics)
         (run_dir / "summary.md").write_text(
             f"# Run Summary: {scenario}\n\n"
             + json.dumps(matrix["by_kind"], indent=2, sort_keys=True)
@@ -1269,7 +1270,7 @@ def run_experiment(
 
     all_metrics["baselines"] = run_baseline_report(agent_count, fragment_size, seed)
     all_metrics["resource_use"] = process_resource_use()
-    write_metrics(run_dir / "metrics.json", all_metrics)
+    write_metrics_and_digest(run_dir / "metrics.json", all_metrics)
 
     if len(scenario_names) == 1:
         write_summary(run_dir / "summary.md", all_metrics["scenarios"][scenario_names[0]])  # type: ignore[index]
