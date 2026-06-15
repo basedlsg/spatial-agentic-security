@@ -27,6 +27,7 @@ _EXPERIMENTS = {
     "one_shot_vs_retry": lambda a: orchestrate.run_one_shot_vs_retry(n=a.n, k=a.k, seeds=a.seeds),
     "partial_compromise": lambda a: orchestrate.run_partial_compromise(n=a.n, k=a.k, seeds=a.seeds),
     "solver_bakeoff": lambda a: orchestrate.run_solver_bakeoff(n=a.n, k=a.k),
+    "detector_keystone": lambda a: orchestrate.run_detector_keystone(n=a.n, k=a.k, seeds=a.seeds),
 }
 
 
@@ -44,6 +45,16 @@ def _summary_md(metrics: dict) -> str:
     bake = metrics.get("solver_bakeoff", {})
     if bake:
         lines.append(f"- solver bakeoff agree_on_residual: {bake.get('all_agree_on_residual')} residual={bake.get('residual')}")
+    det = metrics.get("detector_keystone", {})
+    if det:
+        roll = det.get("rollup", {})
+        dpc = det.get("positive_controls", {})
+        lines.append(f"- detector positive_controls.valid: {dpc.get('valid')}")
+        lines.append(
+            f"- geometry marginal detection advantage: {roll.get('geometry_marginal_detection_advantage_count')}"
+            f" | marginal leakage bits: {roll.get('geometry_marginal_leakage_bits')}"
+            f" | false-positive delta: {roll.get('false_positive_delta')}"
+        )
     return "\n".join(lines) + "\n"
 
 

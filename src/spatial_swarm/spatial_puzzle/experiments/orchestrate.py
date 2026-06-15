@@ -1,10 +1,11 @@
-"""The five spatial-puzzle experiments, each with the random baseline / ceiling.
+"""The spatial-puzzle experiments, each with the random baseline / ceiling.
 
 adversarial_generation : generator yield + reason histogram + accepted residuals
 leakage_ladder         : residual per observation level vs the random ceiling
 one_shot_vs_retry      : one-shot recovery prob for spatial residual vs random ceiling
 partial_compromise     : residual as neighbor pieces are stolen (O1/O3/O4)
 solver_bakeoff         : pure/CP-SAT/SAT/SMT agree on the residual; commitment is the floor
+detector_keystone      : geometry vs a non-geometric tripwire as a tamper-detector
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import statistics
 from collections import Counter
 
 from spatial_swarm.spatial_lab.solvers.base import Budget
+from spatial_swarm.spatial_puzzle.detector import metrics_detector
 from spatial_swarm.spatial_puzzle.enclave.query_attacker import measure_one_shot_recovery
 from spatial_swarm.spatial_puzzle.generators.build import build_hidden_solution, derive_public_view
 from spatial_swarm.spatial_puzzle.generators.rejection import evaluate_candidate, generate_accepted
@@ -106,6 +108,21 @@ def run_solver_bakeoff(*, n, k, seed=7, budget=(20.0, 5_000_000)) -> dict:
     }
 
 
+def run_detector_keystone(*, n, k, seeds, strikes_probe=5, seed_base=5000) -> dict:
+    """Geometry-as-detector vs non-geometric tripwire: detection / FP / probing / leakage."""
+
+    return metrics_detector.run_keystone(
+        n=n, k=k, seeds=seeds, strikes_probe=strikes_probe, seed_base=seed_base
+    )
+
+
+def detector_positive_controls(*, n, k, seeds=5, seed_base=5000, budget=(5.0, 3_000_000)) -> dict:
+    contexts = metrics_detector.build_contexts(
+        n=n, k=k, seeds=seeds, seed_base=seed_base, budget=budget
+    )
+    return metrics_detector.positive_controls(contexts)
+
+
 def positive_controls(*, n, k, seeds=5, seed_base=9000) -> dict:
     passes = 0
     for s in range(seed_base, seed_base + seeds):
@@ -124,4 +141,5 @@ def run_all(*, n=3, k=4, seeds=12) -> dict:
         "one_shot_vs_retry": run_one_shot_vs_retry(n=n, k=k, seeds=seeds),
         "partial_compromise": run_partial_compromise(n=n, k=k, seeds=seeds),
         "solver_bakeoff": run_solver_bakeoff(n=n, k=k),
+        "detector_keystone": run_detector_keystone(n=n, k=k, seeds=seeds),
     }
