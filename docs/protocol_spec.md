@@ -1,10 +1,16 @@
-# USAG Protocol Specification
+# UCOG Protocol Specification
 
-USAG stands for **Unanimous Spatial Assembly Gate**.
+This document describes UCOG (Unanimous Commitment-Opening Gate; code name USAG). The
+code package (`spatial_swarm`), the CLI (`usag-run`), and code identifiers retain the
+USAG name.
 
-Subtitle:
-
-> Message-specific spatial proof-of-membership for fail-closed AI swarms.
+UCOG releases an inter-agent message only when every required agent submits a fresh,
+message-bound, Ed25519-signed proof that opens its per-agent SHA-256 commitment,
+decrypted by a trusted gateway. The 3D/affine "spatial" encoding described below is one
+instantiation of the per-agent secret and is treated as an ablated design point; under
+the implemented checks it adds no cryptographic hardness over a unanimous
+commitment-opening gate (see `docs/findings_keystone_fair_baseline.md` and
+`docs/security_model.md`).
 
 ## Swarm Birth
 
@@ -48,22 +54,31 @@ For every attempted communication:
 7. Every sidecar submits exactly one signed proof packet.
 8. A temporary verifier starts for the message.
 9. The verifier validates identity, epoch, message, challenge, budget, timing, signature,
-   encrypted response, fingerprint-backed geometry, and full participation.
+   encrypted response, commitment opening (the opened value's hash matches the
+   registered per-agent commitment), and full participation.
 10. The temporary verifier deletes its memory and shuts down.
-11. If all `N` original committed pieces are present and valid, the message is released.
-12. Otherwise, the message is blocked and the swarm collapses.
+11. If all `N` registered agents submitted a packet that opened its committed value under
+    the checks above, the message is released.
+12. Otherwise, under the implemented behavior, the message is blocked and the swarm state
+    is set to `COLLAPSED`.
 
-## Geometry
+## Geometry (instantiation detail)
 
-The private fragment remains stable across messages. Each message challenge changes how
-the fragment fits:
+This section describes one instantiation of the per-agent secret. It is an
+implementation detail, not a security property: under the implemented checks the affine
+transform adds no cryptographic hardness over a unanimous commitment-opening gate (see
+`docs/findings_keystone_fair_baseline.md`).
+
+The private fragment remains stable across messages. Each message challenge derives an
+affine map applied to the fragment coordinates:
 
 ```text
 T_C(x, y, z) = A_C * [x, y, z] + b_C mod p
 ```
 
 `A_C` is a challenge-derived invertible `3x3` matrix and `b_C` is a challenge-derived
-translation vector.
+translation vector. The message binding here is carried by deriving the transform from
+the challenge; the same binding can be achieved without a geometric encoding.
 
 ## Proof Packet
 
@@ -131,10 +146,15 @@ The verifier checks:
 10. sidecar signature is valid
 11. encrypted response decrypts and parses
 12. response binds to agent, message, and challenge
-13. proof commitment matches transformed coordinates
-14. inverse-transformed coordinates hash to the registered fragment commitment
-15. every original agent submitted
-16. all submitted transformed pieces are disjoint
+13. proof commitment matches the submitted transformed coordinates
+14. inverse-transformed coordinates hash to the registered per-agent fragment commitment
+    (the commitment-opening check)
+15. every registered agent submitted (set-membership over the registered agent set)
+16. all submitted transformed pieces are pairwise disjoint (a set-disjointness check)
+
+Steps 15 and 16 are the "assembly" step. As implemented, this step is a set-membership
+plus set-disjointness check over the submitted pieces; it does not check geometric tiling.
+The geometric `assembles_exactly` routine is not called by the verifier.
 
 ## Failure Behavior
 

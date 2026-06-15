@@ -1,12 +1,19 @@
 # Spatial Agentic Security
 
-This repository implements **USAG: Unanimous Spatial Assembly Gate**, a research-grade
-protocol simulator for fail-closed communication in AI-agent swarms.
+This repository implements **UCOG (Unanimous Commitment-Opening Gate; code name USAG)**,
+a local protocol simulator for fail-closed communication in AI-agent swarms.
 
-USAG v1 answers one narrow question:
+UCOG releases an inter-agent message only when every required agent submits a fresh,
+message-bound, Ed25519-signed proof that opens its per-agent SHA-256 commitment, decrypted
+by a trusted gateway. The 3D/affine "spatial" encoding is one instantiation of the
+per-agent secret and is treated as an ablated design point; under the implemented checks it
+adds no cryptographic hardness (see docs/findings_keystone_fair_baseline.md and
+docs/security_model.md).
 
-> Can an unauthorized or fake agent communicate inside a swarm without being born with
-> the correct private spatial fragment?
+The simulator examines one narrow question:
+
+> Under the stated configuration, does an unauthorized or fake agent get a message
+> released without holding the per-agent secret that opens its commitment?
 
 The simulator is intentionally local and deterministic. It uses logical agents, private
 sidecars, Ed25519 signatures, sealed proof payloads, finite-field 3D transforms, a central
@@ -50,12 +57,14 @@ not include raw fragments, private signing keys, or decrypted sidecar payloads.
 - sealed encrypted fragment responses using PyNaCl
 - one submission per agent per message
 - per-agent proof-size and timeout envelopes
-- real verifier and assembly checks
-- strict fail-closed swarm collapse on any failure
+- verifier checks: signature verification, commitment opening, and an "assembly" step
+  that checks set-membership and disjointness of submitted pieces (the verifier does not
+  call the geometric `assembles_exactly` tiling routine)
+- fail-closed swarm collapse on any failure
 - adversaries for fake, replay, wrong-message, malformed, slow, duplicate, over-budget,
   stolen-fragment, verifier-snapshot-forgery, and partial-swarm attacks
 - baseline comparison modes for no gate, sender-signature-only,
-  unanimous-signature, and USAG spatial gate
+  unanimous-signature, and the USAG commitment-opening gate (spatial instantiation)
 - ablation modes that disable message binding, sender/receiver binding,
   epoch/nonce binding, proof envelopes, geometry checks, or signatures
 - deterministic packet fuzzing for malformed packets, mixed packet sets, and replay mutations
@@ -64,7 +73,7 @@ not include raw fragments, private signing keys, or decrypted sidecar payloads.
 
 ## What Is Not Claimed
 
-USAG v1 does not prove message truth, prevent all misinformation, replace normal
+UCOG does not establish message truth, prevent all misinformation, replace normal
 cryptography, or claim that attacks are impossible. Report results as observed behavior
 under stated configuration, for example:
 
@@ -92,16 +101,18 @@ only `health_check`, `submit_proof`, `rotate_epoch`, and `shutdown`; raw fragmen
 private keys remain in the child sidecar process. The default stress benchmark path still
 uses in-process sidecars to avoid spawning thousands of local processes.
 
-USAG v0.6 adds a forgery harness and a systematic redaction scanner. Snapshot-boundary
-attackers (verifier public state, prior packets, run-artifact directory) and AI/inference
-attackers (access levels 0-3) run through one mechanism. The default attacker is a
-deterministic optimal-programmatic upper bound: forging reduces to a SHA-256 preimage, an
-Ed25519 forgery, and an X25519 sealed-box decryption, so no model with the same access can
-do better. A pluggable provider records raw model output unmodified. Two positive controls
-(geometry leak, gateway-key compromise) deliberately break through, proving the harness
-detects real forgeries and that USAG's hardness is cryptographic, not "AI cannot solve a 3D
-puzzle". The transform is public and invertible; the protection is the commitment,
-encryption, and signature, not the geometry.
+USAG v0.6 adds a forgery harness and a redaction scanner. Snapshot-boundary attackers
+(verifier public state, prior packets, run-artifact directory) and AI/inference attackers
+(access levels 0-3) run through one mechanism. The default attacker is a deterministic
+programmatic attacker; no model is run in the default path. Forging under this attacker
+reduces to a SHA-256 preimage, an Ed25519 forgery, and an X25519 sealed-box decryption, so
+the observed result reflects those primitives rather than model capability. A pluggable
+provider records raw model output unmodified. Two positive controls (geometry leak,
+gateway-key compromise) are released by the harness, which indicates the harness
+distinguishes those cases from the default-attacker case. The transform is public and
+invertible; under the implemented checks the released-vs-blocked outcome turns on the
+commitment opening, encryption, and signature, not on the geometry (see
+docs/findings_keystone_fair_baseline.md and docs/security_model.md).
 
 ## Repository Map
 

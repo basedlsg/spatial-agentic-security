@@ -1,7 +1,13 @@
 # Results v0.6
 
-USAG v0.6 is **Snapshot-Boundary Forgery Matrix + AI/Inference Forgery Benchmark
-+ Hardened Secret Redaction**.
+> Note: dated record of what was measured. Protocol now called UCOG (code name USAG).
+> A later fair-baseline experiment (docs/findings_keystone_fair_baseline.md) and the
+> formal model (docs/security_model.md) show the geometry adds no cryptographic hardness
+> over a unanimous commitment-opening gate; read 'spatial' below as an instantiation
+> detail, not a security property.
+
+USAG v0.6 is the **Snapshot-Boundary Forgery Matrix + AI/Inference Forgery Benchmark
++ Hardened Secret Redaction** scenario set.
 
 Goal:
 
@@ -51,9 +57,16 @@ runner.py                        ai_forgery_matrix and snapshot_forgery_matrix
 
 ## What Actually Protects A Proof (Threat-Model Clarification)
 
-A v0.6 prerequisite was to state precisely where USAG's hardness lives, because
-the original "spatial puzzle" framing can be read as "an AI cannot solve a 3D
-puzzle", which the evidence does **not** support.
+A v0.6 prerequisite was to state where, in this implementation, releasing a proof
+depends on the cryptographic primitives rather than on the geometry. The original
+"spatial puzzle" framing can be read as "an AI cannot solve a 3D puzzle", which the
+measurements below do not establish. UCOG (Unanimous Commitment-Opening Gate; code
+name USAG) releases an inter-agent message only when every required agent submits a
+fresh, message-bound, Ed25519-signed proof that opens its per-agent SHA-256
+commitment, decrypted by a trusted gateway. The 3D/affine "spatial" encoding is one
+instantiation of the per-agent secret and is treated as an ablated design point;
+under the implemented checks it adds no cryptographic hardness (see
+docs/findings_keystone_fair_baseline.md and docs/security_model.md).
 
 In this implementation a proof packet exposes only:
 
@@ -64,9 +77,9 @@ signature           Ed25519 over the packet
 public metadata     agent_id, epoch, message_id, challenge_id, sizes
 ```
 
-The transformed coordinates are **never in plaintext** in a packet, and the
-message-bound affine transform is **public and invertible**. Therefore forging a
-proof reduces to:
+The transformed coordinates are not placed in plaintext in a packet, and the
+message-bound affine transform is public and invertible. Under the implemented
+checks, forging a proof reduces to:
 
 ```text
 1. a SHA-256 preimage of the registered fragment commitment, and
@@ -74,10 +87,13 @@ proof reduces to:
 3. an X25519 sealed-box decryption (to read any geometry at all).
 ```
 
-The affine transform adds per-message freshness and the assembly tiling check,
-but provides **no standalone hardness**. USAG's protection is cryptographic, not
-geometric. v0.6's benchmarks and positive controls are designed to demonstrate
-exactly this.
+The affine transform adds per-message freshness, and the verifier's "assembly"
+step checks set-membership and disjointness over the submitted fragments (the
+geometric `assembles_exactly` routine is never called by the verifier). Under
+these checks the affine layer adds no standalone cryptographic hardness over the
+three primitives above; the per-agent commitment opening, unanimity, and message
+binding are what the release depends on. v0.6's benchmarks and positive controls
+were constructed to exercise this.
 
 ## AI / Inference Forgery Benchmark
 
@@ -93,18 +109,18 @@ commit: e6aceba2739e8b69ef39a271a6f82076a223a74b
 worktree_dirty: false
 ```
 
-The default attacker is a **deterministic optimal-programmatic** strategy. Since
-forging reduces to the three primitives above, no language model can outperform
-the optimal algorithm with the same access. The programmatic attacker is thus an
-**upper bound**: if it fails at an access level, no LLM with the same access can
-succeed. A pluggable `AIForgeryProvider` lets a real model supply candidate raw
-coordinates; the harness records the model's raw output without modification and
-never rewrites a failed attempt. (No model API keys were configured on this host,
-so only the upper-bound attacker was run; the model-provider path is exercised by
-unit test.)
+No language model was run in this benchmark. The default attacker is a
+deterministic programmatic strategy that guesses raw coordinates from public
+information. Because, under the implemented checks, forging reduces to the three
+primitives above (SHA-256 / Ed25519 / X25519), the observed result reduces to
+those primitives rather than to anything measured about model capability. A
+pluggable `AIForgeryProvider` lets a real model supply candidate raw coordinates;
+the harness records the model's raw output without modification and never rewrites
+a failed attempt. No model API keys were configured on this host, so no model was
+run here; the model-provider path is exercised by unit test.
 
 Access levels grant valid signing authority from level 1 onward, so the benchmark
-isolates the **spatial-inference** question rather than re-testing Ed25519:
+exercises the geometry/commitment check rather than re-testing Ed25519:
 
 ```text
 ai_level_0_protocol_only        public protocol only; cannot sign as target
@@ -194,23 +210,24 @@ result.
 
 ## Positive Controls (Harness Validation)
 
-A benchmark that only ever reports "0 passed" is not credible unless the harness
-can also report a real break. Both forgery matrices include two controls that are
-**expected to succeed**, and both did (100 / 100 each, in both runs):
+A benchmark that only ever reports "0 passed" gives no evidence that the harness
+can also report a break. Both forgery matrices include two controls that are
+expected to succeed, and both did (100 / 100 each, in both runs):
 
 | Control | Passes | Secret extracted | Mechanism |
 | --- | ---: | ---: | --- |
 | control_geometry_leak | 100 / 100 | 100 / 100 | invert public transform on leaked coords |
 | control_gateway_key_compromise | 100 / 100 | 100 / 100 | decrypt old ciphertext, invert transform |
 
-These prove two things:
+These two observations describe:
 
 ```text
-1. The harness detects a genuine forgery (it is not rigged to always fail closed).
-2. USAG's hardness is cryptographic: the moment plaintext geometry leaks, or the
-   gateway decryption key is stolen, the raw fragment is recovered and a valid
-   proof is forged. Host compromise (the gateway key) is explicitly outside the
-   threat model.
+1. The harness detected a genuine forgery in these runs (it is not wired to always
+   fail closed).
+2. When plaintext geometry leaks, or the gateway decryption key is stolen, the raw
+   fragment is recovered and a valid proof is produced in these runs. This locates
+   the dependence in the cryptographic primitives, not the geometry. Host
+   compromise (the gateway key) is outside the stated threat model.
 ```
 
 ## Process Sidecar Rerun (Including Shutdown)
@@ -298,7 +315,7 @@ checking eleven markers (`"coords"`, `private_key`, `signing_key`, `"seed"`,
 
 The forgery benchmarks write a `redaction.json` report and an automated test
 (`test_v0_6_redaction_scan.py`) asserts a clean run has zero markers, with a
-positive control proving the scanner flags a planted secret.
+positive control showing the scanner flags a planted secret.
 
 Scan over all four completed clean v0.6 run directories:
 
@@ -328,37 +345,40 @@ process-sidecar boundary (v0.5) plus the v0.6 shutdown scenario already exercise
 the parent/child isolation question.
 
 The AI-forgery attacker is granted valid signing authority from level 1 onward.
-This is the stronger attacker and isolates the spatial-inference question instead
-of re-testing the signature layer.
+This grants the attacker more access and exercises the geometry/commitment check
+instead of re-testing the signature layer.
 
-The AI-forgery default attacker is a deterministic optimal-programmatic upper
-bound rather than a live model run, for the reason given above (an LLM cannot beat
-the optimal algorithm against these primitives) and because no model keys were
-configured. The model-provider interface is implemented and unit-tested.
+The AI-forgery default attacker is a deterministic programmatic strategy rather
+than a live model run, because no model was run here: no model API keys were
+configured. As noted above, under the implemented checks the result reduces to the
+SHA-256 / Ed25519 / X25519 primitives. The model-provider interface is implemented
+and unit-tested.
 ```
 
 ## Interpretation
 
-The v0.6 evidence supports this claim:
+Under the stated conditions, the v0.6 runs recorded the following:
 
 ```text
 Under the deterministic local simulator, an attacker holding any single stolen
 snapshot (verifier public state, prior packets, or the run-artifact directory),
-and an optimal inference attacker with public protocol information, prior
-observations, valid signing authority, or a stolen neighbouring fragment, could
-not forge a valid spatial proof or extract a raw secret across 800 forgery
-attempts. Because forging reduces to standard SHA-256 / Ed25519 / X25519
-assumptions, this upper-bound result also covers any language-model attacker with
-the same access. Two positive controls confirm the harness detects real breaks
-and that USAG's hardness is cryptographic, not geometric. The focused regression,
+and a programmatic inference attacker with public protocol information, prior
+observations, valid signing authority, or a stolen neighbouring fragment, did not
+forge a valid proof or extract a raw secret across 800 forgery attempts in these
+runs. Under the implemented checks, forging reduces to SHA-256 / Ed25519 / X25519,
+so the recorded result reduces to those primitives and not to anything measured
+about a language model (no model was run). Two positive controls show the harness
+detected real breaks in these runs, and that the dependence sits in the
+cryptographic primitives rather than the geometry. The focused regression,
 process-sidecar rerun (with shutdown), and a systematic redaction scan over all
-four clean runs show no regression and zero secret markers.
+four clean runs recorded no change from prior fail-closed behavior and zero secret
+markers.
 ```
 
-It does not prove zero-knowledge security, compromised-host resistance (the
-gateway-key control breaks confidentiality by design), OS/container sandboxing,
-or that a real frontier model was run. It is an upper-bound argument plus an
-implemented, unit-tested model hook, not a live model evaluation.
+These runs do not address zero-knowledge security, compromised-host resistance
+(the gateway-key control opens confidentiality by design), OS/container
+sandboxing, or behavior of a real frontier model. No live model evaluation was
+performed; the model hook is implemented and unit-tested.
 
 ## Reproduce
 

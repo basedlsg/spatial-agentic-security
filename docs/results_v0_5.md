@@ -1,6 +1,13 @@
 # Results v0.5
 
-USAG v0.5 is **Process Sidecar Runtime + Minimal Sidecar API**.
+> Note: dated record of what was measured. Protocol now called UCOG (code name USAG).
+> A later fair-baseline experiment (docs/findings_keystone_fair_baseline.md) and the
+> formal model (docs/security_model.md) show the geometry adds no cryptographic hardness
+> over a unanimous commitment-opening gate; read 'spatial' below as an instantiation
+> detail, not a security property.
+
+UCOG (Unanimous Commitment-Opening Gate; code name USAG) v0.5 is **Process Sidecar
+Runtime + Minimal Sidecar API**.
 
 Goal:
 
@@ -73,14 +80,14 @@ that create many swarms do not spawn thousands of local processes.
 
 ## New Tests
 
-Added tests prove:
+Added tests assert:
 
 ```text
 ProcessSidecarClient exposes only the minimal API.
 ProcessSidecarClient has no raw fragment or private-key attributes.
 Honest messages pass through process-backed sidecars.
 Fake-agent process-sidecar attempts fail closed.
-Replay attempts fail before signature, decryption, or geometry work.
+Replay attempts fail before signature, decryption, or per-agent-secret work.
 Sidecar shutdown terminates child processes.
 Sidecar shutdown rejects later proof requests.
 ```
@@ -119,7 +126,10 @@ Resource use:
 max RSS: 48.781 MB
 ```
 
-Replay attempts performed no signature, decryption, or geometry work:
+Under the recorded run, replay attempts performed no signature checks, no decryptions,
+and no per-agent-secret checks (the `geometry_checks_performed` metric is the per-agent
+secret-check counter for the 3D/affine instantiation; under the implemented checks it
+adds no cryptographic hardness):
 
 ```text
 process_sidecar_replay signatures_verified p95: 0
@@ -139,13 +149,18 @@ show_private_key|show_seed|full_puzzle|"seed"|seed:' \
 
 ## Interpretation
 
-The v0.5 evidence supports this claim:
+What was observed in v0.5, under the stated conditions:
 
 ```text
-Under the deterministic local simulator, USAG can run sidecars as separate child
-processes behind a minimal proof API while preserving honest-message success and
-fail-closed behavior for fake-agent and replay attacks.
+Under the deterministic local simulator, UCOG ran sidecars as separate child
+processes behind a minimal proof API while honest messages succeeded and fake-agent
+and replay attempts failed closed, across the recorded attempt counts above.
 ```
 
-It does not prove OS sandboxing, container isolation, compromised-host resistance,
-zero-knowledge security, or high-volume process-sidecar scalability.
+This run did not measure OS sandboxing, container isolation, compromised-host
+resistance, zero-knowledge properties, or high-volume process-sidecar scalability;
+no claim is made about any of those. The fail-closed behavior recorded here reduces
+to the underlying primitives (SHA-256 / Ed25519 / X25519) plus unanimity and message
+binding; the 3D/affine "spatial" encoding is one instantiation of the per-agent secret
+and, under the implemented checks, adds no cryptographic hardness (see
+docs/findings_keystone_fair_baseline.md and docs/security_model.md).

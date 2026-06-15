@@ -1,8 +1,15 @@
 # Benchmark Methodology
 
-USAG benchmarks are deterministic protocol-harness runs. They use logical agents, private
-sidecars, finite-field geometry, signed encrypted proof packets, a trusted gateway, and a
-trusted verifier.
+UCOG (Unanimous Commitment-Opening Gate; code name USAG) benchmarks are deterministic
+protocol-harness runs. They use logical agents, private sidecars, finite-field geometry,
+signed encrypted proof packets, a trusted gateway, and a trusted verifier.
+
+UCOG releases an inter-agent message only when every required agent submits a fresh,
+message-bound, Ed25519-signed proof that opens its per-agent SHA-256 commitment, decrypted
+by a trusted gateway. The 3D/affine "spatial" encoding is one instantiation of the
+per-agent secret and is treated as an ablated design point; under the implemented checks it
+adds no cryptographic hardness (see docs/findings_keystone_fair_baseline.md and
+docs/security_model.md).
 
 ## Default Configuration
 
@@ -111,14 +118,18 @@ mode_3_usag_spatial_gate
 ```
 
 The first three modes are deterministic baseline simulations. Signature modes use real
-Ed25519 signing and verification over message-bound payloads. They do not inspect spatial
-proof material. The fourth mode is the real USAG verifier running the same scenario
-implementation used by the attack matrix.
+Ed25519 signing and verification over message-bound payloads. They do not open any
+per-agent secret. The fourth mode is the real USAG verifier (the code/CLI) running the same
+scenario implementation used by the attack matrix.
 
-For spatial-material attacks such as `valid_signature_wrong_geometry`, the baseline
-assumption is that ordinary signatures are valid and only the spatial material is wrong.
-This is intentional: it tests what the spatial layer adds after normal signature checks
-have already succeeded.
+For per-agent-secret attacks such as `valid_signature_wrong_geometry`, the baseline
+assumption is that ordinary signatures are valid and only the per-agent secret material is
+wrong. This baseline measures the difference between a signature-only check and the
+commitment-opening check after normal signature checks have already succeeded. Note that
+the v0.3 separation reported here was measured against signature baselines that never open
+a per-agent secret; a fair unanimous commitment-opening baseline matches it (see
+docs/findings_keystone_fair_baseline.md), so the measured separation comes from the
+per-agent commitment opening plus unanimity plus message binding, not from the geometry.
 
 ## Ablation Modes
 
@@ -134,10 +145,12 @@ usag_without_geometry_check
 usag_without_signatures
 ```
 
-Disabling one check does not guarantee an attack will pass. Later checks remain active
+Disabling one check does not by itself cause an attack to pass. Later checks remain active
 unless that ablation disables them too. For example, removing the per-piece geometry check
-can move a wrong-geometry attack from `wrong_geometry` to `assembly_failed`; that is still
-useful evidence because it shows which layer terminated the round.
+can move a wrong-geometry attack from `wrong_geometry` to `assembly_failed`; the run records
+which stage terminated the round. The verifier's `assembly` stage checks set-membership and
+disjointness over the opened per-agent secrets, not geometric tiling (the geometric
+`assembles_exactly` routine is never called by the verifier).
 
 ## Fuzzing
 

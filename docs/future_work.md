@@ -1,5 +1,14 @@
 # Future Work
 
+This file describes the protocol now called UCOG (Unanimous Commitment-Opening Gate;
+code name USAG). UCOG releases an inter-agent message only when every required agent
+submits a fresh, message-bound, Ed25519-signed proof that opens its per-agent SHA-256
+commitment, decrypted by a trusted gateway. The 3D/affine "spatial" encoding is one
+instantiation of the per-agent secret and is treated as an ablated design point; under
+the implemented checks it adds no cryptographic hardness (see
+docs/findings_keystone_fair_baseline.md and docs/security_model.md). Milestone and CLI
+labels below keep the "USAG" name where they refer to the code or to dated artifacts.
+
 ## Milestones
 
 ```text
@@ -56,13 +65,18 @@ no shell access from LLM
 rate-limits proof requests
 ```
 
-future verifier:
+future verifier (proposed directions, not yet implemented or measured):
 
 ```text
 TEE or enclave-style key storage
 commitment-based verification
 zero-knowledge proof of valid transformed fragment
 ```
+
+These are proposed directions only. The "transformed fragment" item refers to the spatial
+encoding as one instantiation of the per-agent secret; it is listed as a future design
+exploration and is not, under the implemented checks, a source of cryptographic hardness
+(see docs/findings_keystone_fair_baseline.md and docs/security_model.md).
 
 ## Agent Framework Integration
 
@@ -73,8 +87,9 @@ integrate into a four-agent graph:
 Designer -> Coder -> Reviewer -> Tester
 ```
 
-Each edge remains guarded externally by USAG. Do not scale to hundreds of live LLM agents
-until the deterministic protocol and baseline results are stable.
+Each edge would route its inter-agent message through UCOG as an external gate. Do not
+scale to hundreds of live LLM agents until the deterministic protocol and baseline results
+are stable.
 
 ## LLM Attacker Benchmark
 

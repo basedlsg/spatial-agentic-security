@@ -2,14 +2,21 @@
 
 ## Title
 
-Unanimous Spatial Assembly Gates for Fail-Closed Communication in AI Agent Swarms
+A Unanimous Commitment-Opening Gate for Fail-Closed Communication in AI Agent Swarms
 
-## Abstract Claim
+## Abstract
 
-We present USAG, a fail-closed communication protocol for multi-agent LLM systems. USAG
-requires every spawned agent to submit a message-bound spatial proof before any inter-agent
-message is released. The protocol is evaluated against fake-agent insertion, replay,
-wrong-message, over-budget, malformed-packet, and partial-compromise attacks.
+This describes UCOG (Unanimous Commitment-Opening Gate; code name USAG), a fail-closed
+communication mechanism implemented for multi-agent LLM systems. UCOG releases an
+inter-agent message only when every required agent submits a fresh, message-bound,
+Ed25519-signed proof that opens its per-agent SHA-256 commitment, decrypted by a trusted
+gateway. The 3D/affine "spatial" encoding is one instantiation of the per-agent secret and
+is treated as an ablated design point; under the implemented checks it adds no cryptographic
+hardness over a non-geometric unanimous commitment-opening gate (see
+docs/findings_keystone_fair_baseline.md and docs/security_model.md). The implementation was
+exercised against fake-agent insertion, replay, wrong-message, over-budget, malformed-packet,
+and partial-compromise scenarios, and the observed pass/block counts under the stated
+conditions are reported.
 
 ## Sections
 

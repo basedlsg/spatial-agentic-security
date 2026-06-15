@@ -1,6 +1,12 @@
 # Results v0.4
 
-USAG v0.4 is **Ephemeral Setup + Commitment Verifier**.
+> Note: dated record of what was measured. Protocol now called UCOG (code name USAG).
+> A later fair-baseline experiment (docs/findings_keystone_fair_baseline.md) and the
+> formal model (docs/security_model.md) show the geometry adds no cryptographic hardness
+> over a unanimous commitment-opening gate; read 'spatial' below as an instantiation
+> detail, not a security property.
+
+UCOG (Unanimous Commitment-Opening Gate; code name USAG) v0.4 is the **Ephemeral Setup + Commitment Verifier** design point.
 
 Goal:
 
@@ -81,8 +87,10 @@ plaintext proof payloads
 
 The verifier checks a submitted transformed proof by decrypting the message-bound response,
 applying the inverse challenge transform, recomputing the original piece fingerprint, and
-comparing that fingerprint to the registered commitment. Assembly checks require every
-committed agent to submit exactly once and reject transformed overlaps.
+comparing that fingerprint to the registered commitment. The "assembly" check the verifier
+runs is a set-membership and disjointness check: it requires every committed agent to submit
+exactly once and rejects duplicate submissions. (The geometric assembles_exactly routine is
+not called by the verifier.)
 
 Important simulator boundary:
 
@@ -93,7 +101,7 @@ hold raw pieces. The verifier and registry do not.
 
 ## New Tests
 
-Added tests prove:
+Added tests assert (and pass under the implemented checks):
 
 ```text
 After setup, verifier-visible registrations have no raw fragments.
@@ -101,7 +109,7 @@ After setup, the full puzzle is gone.
 After setup, the seed is gone.
 Temporary verifier exits after checking.
 Run logs contain no raw setup or piece material.
-An attacker stealing verifier public state cannot forge an agent piece.
+With only verifier public state, the programmatic attacker's forged submission was rejected.
 ```
 
 The new stolen-verifier-state attack is:
@@ -224,13 +232,17 @@ metrics.json: absent
 
 ## Interpretation
 
-The v0.4 evidence supports this claim:
+What was measured in v0.4:
 
 ```text
-Under the deterministic local simulator, the verifier can reject honest/fake/replay/
-wrong-geometry/stolen-key/stolen-fragment/fuzz attacks while storing only public keys,
-piece fingerprints, and policy metadata rather than raw puzzle pieces.
+Under the deterministic local simulator, with the run counts and provenance recorded
+above, the honest scenario passed and every listed attack/fuzz scenario was rejected
+(0 passes), while verifier-visible state stored only public keys, piece fingerprints,
+and policy metadata rather than raw puzzle pieces. The "geometry"-related rejections
+reduce to the underlying primitives (SHA-256 commitment opening, Ed25519 signing,
+X25519 message binding); see docs/findings_keystone_fair_baseline.md and
+docs/security_model.md.
 ```
 
-It does not prove zero-knowledge security, compromised-host resistance, sidecar memory
-isolation, or production deployment safety.
+These runs were not designed to and do not measure zero-knowledge security,
+compromised-host resistance, sidecar memory isolation, or production deployment safety.

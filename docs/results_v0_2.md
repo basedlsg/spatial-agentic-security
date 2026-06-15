@@ -1,5 +1,11 @@
 # Results v0.2
 
+> Note: dated record of what was measured. Protocol now called UCOG (code name USAG).
+> A later fair-baseline experiment (docs/findings_keystone_fair_baseline.md) and the
+> formal model (docs/security_model.md) show the geometry adds no cryptographic hardness
+> over a unanimous commitment-opening gate; read 'spatial' below as an instantiation
+> detail, not a security property.
+
 These results were generated from a clean committed tree.
 
 ```text
@@ -148,7 +154,7 @@ communication under this assumption.
 
 ## Interpretation
 
-The v0.2 evidence supports this narrow claim:
+The v0.2 evidence describes what was observed under the stated conditions:
 
 ```text
 Under the deterministic trusted-verifier harness, honest messages passed and the
@@ -156,5 +162,15 @@ implemented unauthorized, malformed, replay, budget, stolen-material, and wrong-
 attacks failed closed.
 ```
 
-It does not support claims of foolproof security, semantic truth, verifier-compromise
-resistance, or superiority over cryptographic signatures in general.
+This is a record of measured pass/fail outcomes on the implemented harness, not a
+statement about security in general, semantic truth, verifier-compromise resistance, or
+behavior relative to cryptographic signatures.
+
+The `wrong_geometry` and `wrong_transform` rows above are measurements of one
+instantiation of the per-agent secret (the 3D/affine encoding). A later fair-baseline
+experiment (docs/findings_keystone_fair_baseline.md) found that a unanimous
+commitment-opening baseline that never opens a per-agent geometric secret matches the
+separation measured here, so the rows are reported as an ablated design point rather
+than as a geometry-specific security property. The component the verifier checks at the
+"assembly" stage is set-membership plus disjointness, not geometric tiling; see
+docs/security_model.md.

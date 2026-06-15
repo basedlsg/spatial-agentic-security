@@ -1,7 +1,13 @@
 # Results v0.3
 
-USAG v0.3 adds baseline comparisons, verifier ablations, deterministic packet fuzzing,
-and a focused 10,000-attempt benchmark.
+> Note: dated record of what was measured. Protocol now called UCOG (code name USAG).
+> A later fair-baseline experiment (docs/findings_keystone_fair_baseline.md) and the
+> formal model (docs/security_model.md) show the geometry adds no cryptographic hardness
+> over a unanimous commitment-opening gate; read 'spatial' below as an instantiation
+> detail, not a security property.
+
+UCOG (Unanimous Commitment-Opening Gate; code name USAG) v0.3 adds baseline comparisons,
+verifier ablations, deterministic packet fuzzing, and a focused 10,000-attempt benchmark.
 
 ## Commits And Provenance
 
@@ -42,7 +48,8 @@ Mode-level result:
 | mode_2_unanimous_signature_gate | 10000 | 15000 | 9000 / 14000 | 24.693 |
 | mode_3_usag_spatial_gate | 1000 | 15000 | 0 / 14000 | 27.036 |
 
-Key spatial-layer comparison:
+Per-scenario comparison across the four modes (the USAG spatial gate column is one
+instantiation of the per-agent secret; see the banner above):
 
 | Scenario | No gate | Sender sig only | Unanimous sig | USAG spatial gate |
 | --- | ---: | ---: | ---: | ---: |
@@ -56,9 +63,19 @@ Key spatial-layer comparison:
 Interpretation:
 
 ```text
-Normal signature gates catch ordinary impersonation and replay/message-binding attacks,
-but they do not catch valid-signature wrong-spatial-material attacks in this benchmark.
-USAG adds a spatial proof layer that blocks those attacks at geometry.
+In this benchmark the signature-only baselines (modes 1 and 2) catch ordinary
+impersonation and replay/message-binding attacks, but pass the
+valid_signature_wrong_geometry / wrong_transform / stolen_signing_authority_only
+scenarios. Those baselines never open a per-agent secret, so any holder of a valid
+signature passes. Mode 3 (USAG) additionally requires each agent to open its per-agent
+commitment, and rejected those scenarios with `wrong_geometry` here.
+
+The measured separation is therefore against baselines that do not open a per-agent
+secret. A later experiment with a fair unanimous commitment-opening baseline (no
+geometry) matched mode 3 on these scenarios (docs/findings_keystone_fair_baseline.md),
+so the separation in this table comes from per-agent commitment opening + unanimity +
+message binding, not from the 3D/affine geometry. The geometry is one instantiation of
+the per-agent secret and, under the implemented checks, adds no cryptographic hardness.
 ```
 
 ## Ablation Matrix
@@ -86,10 +103,16 @@ Selected layer-shift outcomes:
 Important observations:
 
 ```text
-Removing geometry does not let wrong geometry pass; assembly catches it later.
-Removing signatures does not let fake-agent attempts pass; geometry catches them later.
-Removing proof-envelope budget moves overbudget rejection from budget to signature.
-Each disabled layer changes where failures happen, which shows the layers are measurable.
+With the geometry check disabled, the wrong-geometry scenario was still rejected, with
+the reason code shifting to `assembly_failed`. (The verifier's "assembly" step checks
+set-membership and disjointness of the opened per-agent secrets, not geometric tiling;
+the geometric assembles_exactly routine is never called by the verifier.)
+With signatures disabled, the fake-agent scenario was still rejected, with the reason
+code shifting to `wrong_geometry`.
+With the proof-envelope budget disabled, the overbudget scenario's rejection reason
+shifted from `over_budget` to `wrong_signature`.
+Each disabled layer changed which reason code was emitted in these runs; the present
+data does not isolate the cryptographic contribution of any single layer.
 ```
 
 ## Fuzzing
@@ -186,13 +209,27 @@ communication under this assumption.
 
 ## Interpretation
 
-The v0.3 evidence supports this claim:
+What the v0.3 runs recorded:
 
 ```text
-Under the deterministic trusted-verifier harness, USAG adds measurable spatial checks
-over signature-only baselines, and the implemented focused, ablation, and fuzz attacks
-failed closed after the fuzzer no-op mutation bug was fixed.
+Under the deterministic trusted-verifier harness, mode 3 (USAG) rejected the
+valid_signature_wrong_geometry / wrong_transform / stolen_signing_authority_only
+scenarios that the signature-only baselines (modes 1 and 2) passed, and the implemented
+focused, ablation, and fuzz attempts passed 0 unauthorized attempts (after the fuzzer
+no-op mutation bug was fixed).
 ```
 
-It does not support claims of foolproof security, semantic truth, verifier-compromise
-resistance, or broad superiority over all cryptographic alternatives.
+Scope and caveats:
+
+```text
+The signature-only baselines do not open a per-agent secret, so this is a comparison
+against a weaker gate. A later fair unanimous commitment-opening baseline (no geometry)
+matched mode 3 on the same scenarios (docs/findings_keystone_fair_baseline.md); under
+the implemented checks the 3D/affine geometry adds no cryptographic hardness over a
+unanimous commitment-opening gate (docs/security_model.md). The "assembly" step the
+verifier runs checks set-membership and disjointness, not geometric tiling.
+
+These runs do not establish foolproof security, semantic truth, verifier-compromise
+resistance, or superiority over cryptographic alternatives; they assume a trusted
+gateway and were measured under the stated harness conditions.
+```

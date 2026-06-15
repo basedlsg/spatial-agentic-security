@@ -1,6 +1,14 @@
 # Results v0.1
 
-USAG v0.1 established the first deterministic protocol result.
+> Note: dated record of what was measured. Protocol now called UCOG (code name USAG).
+> A later fair-baseline experiment (docs/findings_keystone_fair_baseline.md) and the
+> formal model (docs/security_model.md) show the geometry adds no cryptographic hardness
+> over a unanimous commitment-opening gate; read 'spatial' below as an instantiation
+> detail, not a security property.
+
+This file is a dated record of the UCOG (Unanimous Commitment-Opening Gate; code name
+USAG) v0.1 run. It records the first deterministic protocol measurements taken under the
+conditions described below.
 
 ## Validated Points
 
@@ -17,15 +25,23 @@ valid_signature_wrong_geometry: 0 / 100 passed
 valid_signature_wrong_transform: 0 / 100 passed
 ```
 
-The key v0.1 result is that a valid registered signature with wrong spatial material is
-blocked by the spatial verifier:
+In this run, a valid registered signature submitted with wrong spatial material was
+rejected by the verifier with reason `wrong_geometry`:
 
 ```text
 valid_signature_wrong_geometry -> wrong_geometry
 valid_signature_wrong_transform -> wrong_geometry
 ```
 
-This shows that the spatial layer is doing work beyond Ed25519 signatures.
+Under the conditions of this v0.1 run, these cases were measured against signature
+baselines that never open a per-agent secret, so the observed rejection is consistent
+with a verifier that requires opening a per-agent secret in addition to checking the
+Ed25519 signature. A later fair-baseline experiment shows that a unanimous
+commitment-opening gate without the spatial encoding produces the same separation, so the
+geometry is not the source of the separation; the per-agent commitment opening plus
+unanimity plus message binding is (see docs/findings_keystone_fair_baseline.md and
+docs/security_model.md). The 3D/affine 'spatial' encoding here is one instantiation of
+the per-agent secret and is treated as an ablated design point.
 
 ## Corrected 1024-Agent Smoke
 
