@@ -23,6 +23,12 @@ dev = [
   "hypothesis>=6.100",
   "pytest>=8.0",
 ]
+solvers = [
+    "networkx>=3.2.1",
+    "ortools>=9.15.6755",
+    "python-sat>=1.9.dev5",
+    "z3-solver>=4.16.0.0",
+]
 
 [project.scripts]
 usag-run = "spatial_swarm.experiments.runner:main"
