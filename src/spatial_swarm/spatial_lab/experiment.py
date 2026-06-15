@@ -32,7 +32,7 @@ from spatial_swarm.spatial_lab.solvers.base import Budget
 # Tier settings: small EXACT (enumerable) and larger SCALING (budgeted).
 TIERS = {
     "exact": {"n": 3, "k": 4, "bound": 2, "exact": True, "budget": (3.0, 1_000_000)},
-    "scaling": {"n": 4, "k": 6, "bound": 2, "exact": False, "budget": (5.0, 2_000_000)},
+    "scaling": {"n": 4, "k": 8, "bound": 2, "exact": False, "budget": (8.0, 3_000_000)},
 }
 
 
