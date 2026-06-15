@@ -10,6 +10,7 @@ import statistics
 from pathlib import Path
 from typing import Any
 
+from spatial_swarm.experiments.stats import clopper_pearson
 from spatial_swarm.protocol.verifier import VerificationResult
 
 
@@ -59,6 +60,7 @@ def summarize_results(results: list[VerificationResult], scenario: str) -> dict[
         "passes": passes,
         "failures": failures,
         "pass_rate": passes / attempts if attempts else 0.0,
+        "pass_rate_ci95": _proportion_ci(passes, attempts),
         "failure_rate": failures / attempts if attempts else 0.0,
         "ejections": ejections,
         "swarm_collapse_rate": collapses / attempts if attempts else 0.0,
@@ -71,6 +73,13 @@ def summarize_results(results: list[VerificationResult], scenario: str) -> dict[
         "latency_ms": _latency_summary(latencies),
         "proof_bytes_total": _latency_summary(proof_totals),
     }
+
+
+def _proportion_ci(successes: int, n: int) -> dict[str, float]:
+    """Exact 95% Clopper-Pearson interval for the pass rate over `n` trials."""
+
+    low, high = clopper_pearson(successes, n)
+    return {"low": low, "high": high}
 
 
 def _latency_summary(values: list[float]) -> dict[str, float]:
