@@ -220,6 +220,13 @@ class Verifier:
                     agent_id,
                     submission_number=packet.submission_number,
                 )
+            if packet.swarm_id != self.registry.swarm_id:
+                return fail(
+                    FailureReason.WRONG_SWARM,
+                    "swarm_binding",
+                    agent_id,
+                    submission_number=packet.submission_number,
+                )
             if self.options.bind_message_hash and packet.message_id != message.message_id:
                 return fail(
                     FailureReason.WRONG_MESSAGE_HASH,
@@ -358,7 +365,9 @@ class Verifier:
                 )
 
             source_coords = inverse_transform.apply(coords)
-            source_commitment = fragment_commitment(agent_id, source_coords, registration.p)
+            source_commitment = fragment_commitment(
+                agent_id, source_coords, registration.p, self.registry.swarm_id
+            )
             geometry_checks_performed += 1
             if self.options.check_geometry and source_commitment != registration.fragment_commitment:
                 return fail(

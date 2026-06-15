@@ -34,8 +34,9 @@ gateway:
 public registry  R = (swid, e, { (i, vk_i, C_i) }_{i in [N]})
 ```
 
-(`swid` and the registry-binding of Section 5 are added relative to the current
-code; see the cross-swarm gap in Section 5.) A message `m` has a public canonical
+(`swid` is bound into the signed payload and the fragment commitment in the
+implementation, with the verifier rejecting a mismatch; see Section 5 for the
+one residual.) A message `m` has a public canonical
 encoding; `mid = H("msg", m)`.
 
 **Proof** by agent `i` for message `m`:
@@ -211,12 +212,15 @@ sealed box does.
 - Gateway-key entropy. sk_G must be sampled with full entropy and NOT derived from
   a public seed; likewise the per-agent secrets (the code derives both from `seed`,
   so seed secrecy is load-bearing).
-- Cross-swarm / epoch replay (a real gap in the current code). The code's signed
-  payload and commitments do NOT bind a swarm/registry id or pk_G. A proof valid in
-  swarm A at epoch e is replayable into swarm B that reuses agent ids + epoch +
-  keys. Section 1 adds `swid` to close this; the implementation does not yet bind
-  it. Anti-replay within a swarm also depends on the verifier's in-memory `_seen`
-  set, which `shutdown()` clears.
+- Cross-swarm replay (now bound; one residual). A per-swarm `swarm_id` is bound
+  into the signed payload AND the fragment commitment, and the verifier rejects a
+  mismatch (`FailureReason.WRONG_SWARM`); a proof from swarm A is rejected by swarm
+  B even under identical keys (`tests/test_cross_swarm_replay.py`). RESIDUAL: the
+  default `swarm_id` is derived deterministically from the seed for reproducible
+  benchmarks, so two swarms sharing BOTH seed and swarm_id are the same swarm and
+  interoperate -- deployments MUST pass a unique `swarm_id`. `pk_G` is still not
+  bound into the payload. Anti-replay within a swarm also depends on the verifier's
+  in-memory `_seen` set, which `shutdown()` clears.
 - Disjointness is not an unforgeability primitive. The disjointness check rules out
   two agents presenting the same secret; it assumes honest, disjoint setup and adds
   no per-agent unforgeability. It is an anti-pooling / liveness check.

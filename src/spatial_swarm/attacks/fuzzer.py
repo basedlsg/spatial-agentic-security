@@ -196,6 +196,7 @@ class PacketFuzzer:
         )
         fields: dict[str, Any] = {
             "agent_id": agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": message.message_id,
             "challenge_id": challenge.challenge_id,

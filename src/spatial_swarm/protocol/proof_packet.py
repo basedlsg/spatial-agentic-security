@@ -22,6 +22,7 @@ class FragmentResponse(BaseModel):
 
 class ProofPacket(BaseModel):
     agent_id: str
+    swarm_id: str
     epoch: str
     message_id: str
     challenge_id: str

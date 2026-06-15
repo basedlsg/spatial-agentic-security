@@ -10,6 +10,7 @@ from spatial_swarm.core.epoch import Epoch
 from spatial_swarm.core.registry import AgentRegistration
 from spatial_swarm.core.sidecar import Sidecar
 from spatial_swarm.core.sidecar_runtime import ProcessSidecarClient
+from spatial_swarm.crypto.hashing import sha256_hex
 from spatial_swarm.crypto.keys import deterministic_signing_key, generate_gateway_private_key
 from spatial_swarm.geometry.finite_grid import Coord, FiniteGrid
 from spatial_swarm.geometry.fragment import Fragment, cut_puzzle, generate_full_puzzle
@@ -26,6 +27,7 @@ class SetupReport:
 @dataclass(frozen=True)
 class SetupArtifacts:
     registry_epoch: str
+    swarm_id: str
     private_key: PrivateKey
     grid: FiniteGrid
     registrations: list[AgentRegistration]
@@ -44,12 +46,19 @@ class EphemeralSetup:
         p: int,
         timeout_ms: float,
         sidecar_runtime: str = "in_process",
+        swarm_id: str | None = None,
     ) -> None:
         self.agent_count = agent_count
         self.fragment_size = fragment_size
         self.p = p
         self.timeout_ms = timeout_ms
         self.sidecar_runtime = sidecar_runtime
+        # A per-swarm domain separator. Defaults to a deterministic derivation
+        # from the seed (reproducible benchmarks); real deployments MUST pass a
+        # unique value so swarms are separated even under key/seed reuse.
+        self.swarm_id = swarm_id if swarm_id is not None else sha256_hex(
+            {"kind": "swarm_id", "seed": seed}
+        )[:16]
         self._seed: int | None = seed
         self._full_puzzle: set[Coord] | None = None
         self._fragments: dict[str, Fragment] | None = None
@@ -107,6 +116,7 @@ class EphemeralSetup:
                 gateway_public_key=private_key.public_key,
                 epoch=epoch,
                 envelope=envelope,
+                swarm_id=self.swarm_id,
             )
             registrations.append(
                 AgentRegistration(
@@ -123,6 +133,7 @@ class EphemeralSetup:
         self._erase()
         return SetupArtifacts(
             registry_epoch=epoch,
+            swarm_id=self.swarm_id,
             private_key=private_key,
             grid=grid,
             registrations=registrations,

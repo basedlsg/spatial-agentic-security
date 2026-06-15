@@ -48,6 +48,7 @@ class Gateway:
         logger: Optional[Any] = None,
         verifier_options: Optional[VerifierOptions] = None,
         sidecar_runtime: str = "in_process",
+        swarm_id: Optional[str] = None,
     ) -> "Gateway":
         setup = EphemeralSetup(
             agent_count=agent_count,
@@ -56,9 +57,14 @@ class Gateway:
             p=p,
             timeout_ms=timeout_ms,
             sidecar_runtime=sidecar_runtime,
+            swarm_id=swarm_id,
         )
         artifacts = setup.run()
-        registry = Registry(epoch=artifacts.registry_epoch, registrations=artifacts.registrations)
+        registry = Registry(
+            epoch=artifacts.registry_epoch,
+            registrations=artifacts.registrations,
+            swarm_id=artifacts.swarm_id,
+        )
         gateway = cls(
             registry=registry,
             sidecars=artifacts.sidecars,
@@ -79,6 +85,10 @@ class Gateway:
     @property
     def epoch(self) -> str:
         return self.registry.epoch
+
+    @property
+    def swarm_id(self) -> str:
+        return self.registry.swarm_id
 
     def freeze(self, sender_id: str, receiver_id: str, content: Any, nonce: Optional[str] = None) -> FrozenMessage:
         return freeze_message(sender_id, receiver_id, self.epoch, content, nonce)

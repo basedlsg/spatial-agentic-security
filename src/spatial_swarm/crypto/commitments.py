@@ -13,10 +13,11 @@ def normalize_coords(coords: Iterable[Coord]) -> list[list[int]]:
     return [[int(x), int(y), int(z)] for x, y, z in sorted(coords)]
 
 
-def fragment_commitment(agent_id: str, coords: Iterable[Coord], p: int) -> str:
+def fragment_commitment(agent_id: str, coords: Iterable[Coord], p: int, swarm_id: str) -> str:
     return sha256_hex(
         {
             "kind": "fragment_commitment",
+            "swarm_id": swarm_id,
             "agent_id": agent_id,
             "p": p,
             "coords": normalize_coords(coords),

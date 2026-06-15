@@ -11,6 +11,7 @@ class FailureReason(str, Enum):
     UNREGISTERED_AGENT = "unregistered_agent"
     INACTIVE_AGENT = "inactive_agent"
     WRONG_EPOCH = "wrong_epoch"
+    WRONG_SWARM = "wrong_swarm"
     WRONG_MESSAGE_HASH = "wrong_message_hash"
     WRONG_CHALLENGE = "wrong_challenge"
     INVALID_SUBMISSION_NUMBER = "invalid_submission_number"

@@ -242,6 +242,7 @@ class ForgeryOutcome:
 def _build_packet(
     *,
     target_agent_id: str,
+    swarm_id: str,
     epoch: str,
     message: FrozenMessage,
     challenge: Challenge,
@@ -262,6 +263,7 @@ def _build_packet(
     )
     fields: dict[str, object] = {
         "agent_id": target_agent_id,
+        "swarm_id": swarm_id,
         "epoch": epoch,
         "message_id": message.message_id,
         "challenge_id": challenge.challenge_id,
@@ -580,6 +582,7 @@ def run_forgery_round(
             )
         forged = _build_packet(
             target_agent_id=target_agent_id,
+            swarm_id=gw.swarm_id,
             epoch=gw.epoch,
             message=message,
             challenge=challenge,

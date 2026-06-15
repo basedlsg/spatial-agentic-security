@@ -36,6 +36,7 @@ class PublicAgentRecord:
 @dataclass(frozen=True)
 class VerifierPublicSnapshot:
     epoch: str
+    swarm_id: str
     state: SwarmState
     agents: tuple[PublicAgentRecord, ...]
 
@@ -47,8 +48,9 @@ class VerifierPublicSnapshot:
 
 
 class Registry:
-    def __init__(self, epoch: str, registrations: Iterable[AgentRegistration]):
+    def __init__(self, epoch: str, registrations: Iterable[AgentRegistration], swarm_id: str):
         self.epoch = epoch
+        self.swarm_id = swarm_id
         self.state = SwarmState.ACTIVE
         self._registrations = {registration.agent_id: registration for registration in registrations}
         self.original_agent_ids = tuple(sorted(self._registrations, key=_agent_sort_key))
@@ -68,6 +70,7 @@ class Registry:
     def public_snapshot(self) -> VerifierPublicSnapshot:
         return VerifierPublicSnapshot(
             epoch=self.epoch,
+            swarm_id=self.swarm_id,
             state=self.state,
             agents=tuple(
                 PublicAgentRecord(

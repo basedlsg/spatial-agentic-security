@@ -55,6 +55,7 @@ class ValidSignatureWrongGeometryAgent:
         )
         fields: dict[str, Any] = {
             "agent_id": self.target_agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": message.message_id,
             "challenge_id": challenge.challenge_id,
@@ -119,6 +120,7 @@ class StolenFragmentOnlyAgent:
         )
         fields: dict[str, Any] = {
             "agent_id": self.target_agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": message.message_id,
             "challenge_id": challenge.challenge_id,
@@ -176,6 +178,7 @@ class CorrectGeometryWrongAgentIdAgent:
         )
         fields: dict[str, Any] = {
             "agent_id": self.target_agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": message.message_id,
             "challenge_id": challenge.challenge_id,
@@ -229,6 +232,7 @@ class ValidSignatureWrongTransformAgent(ValidSignatureWrongGeometryAgent):
         )
         fields: dict[str, Any] = {
             "agent_id": self.target_agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": message.message_id,
             "challenge_id": challenge.challenge_id,
@@ -276,6 +280,7 @@ class ValidSignatureWrongMessageHashAgent(ValidSignatureWrongGeometryAgent):
         )
         fields: dict[str, Any] = {
             "agent_id": self.target_agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": wrong_message_id,
             "challenge_id": challenge.challenge_id,
@@ -346,6 +351,7 @@ class VerifierSnapshotForgeryAgent:
         )
         fields: dict[str, Any] = {
             "agent_id": self.target_agent_id,
+            "swarm_id": gateway.swarm_id,
             "epoch": gateway.epoch,
             "message_id": message.message_id,
             "challenge_id": challenge.challenge_id,

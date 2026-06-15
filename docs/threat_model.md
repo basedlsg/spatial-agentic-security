@@ -19,6 +19,8 @@ USAG v1 defends against:
 - missing or late fragments
 - a single stolen fragment used alone
 - a partial swarm where `k < N` fragments are controlled
+- replay of a valid proof into a different swarm (one with a distinct `swarm_id`),
+  even when the other swarm reuses agent IDs, epoch, and key material
 
 ## Out Of Scope
 
@@ -73,6 +75,7 @@ USAG does not claim:
 | Impersonates registered ID without key | tested | fail | `wrong_signature` |
 | Valid signature, wrong geometry | tested | fail | `wrong_geometry` |
 | Replay old proof | tested | fail | `wrong_message_hash` |
+| Replay proof into another swarm | tested | fail | `wrong_swarm` (needs unique `swarm_id` per deployment) |
 | Wrong message proof | tested | fail | `wrong_message_hash` |
 | Duplicate submission | tested | fail | `duplicate_submission` |
 | Late packet | tested | fail | `late_packet` |

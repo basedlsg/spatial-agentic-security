@@ -31,14 +31,18 @@ class Sidecar:
         gateway_public_key: PublicKey,
         epoch: str,
         envelope: ProofEnvelope,
+        swarm_id: str,
     ) -> None:
         self.fragment = fragment
         self.signing_key = signing_key
         self.gateway_public_key = gateway_public_key
         self.epoch = epoch
         self.envelope = envelope
+        self.swarm_id = swarm_id
         self.agent_id = fragment.agent_id
-        self.fragment_commitment = fragment_commitment(fragment.agent_id, fragment.coords, fragment.p)
+        self.fragment_commitment = fragment_commitment(
+            fragment.agent_id, fragment.coords, fragment.p, swarm_id
+        )
 
     @property
     def verify_key(self):
@@ -97,6 +101,7 @@ class Sidecar:
         encrypted_b64 = base64.b64encode(encrypted).decode("ascii")
         fields = {
             "agent_id": self.agent_id,
+            "swarm_id": self.swarm_id,
             "epoch": self.epoch,
             "message_id": message_id,
             "challenge_id": challenge_id,
