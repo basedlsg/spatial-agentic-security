@@ -12,11 +12,8 @@ piece exactly and the search must return it.
 
 from __future__ import annotations
 
-import random
-
 from spatial_swarm.spatial_lab import representations as Rep
 from spatial_swarm.spatial_lab.solvers import assembly_search, registration
-from spatial_swarm.spatial_lab.solvers.base import Budget
 
 # Lab A applies to representations with a spatial pose (R1 points and R2-R4 voxels).
 LAB_A_REPRS = ("R1", "R2", "R3", "R4")
