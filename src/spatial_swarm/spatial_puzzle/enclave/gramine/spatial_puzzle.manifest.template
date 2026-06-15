@@ -1,0 +1,26 @@
+# Gramine manifest template for the spatial-puzzle sealed service (INERT on this host).
+# This machine is arm64 macOS with NO Intel SGX; this file documents the hardware path.
+# Run on an SGX host with Gramine installed: `gramine-sgx-sign` then `gramine-sgx`.
+
+libos.entrypoint = "/usr/bin/python3"
+loader.entrypoint = "file:{{ gramine.libos }}"
+loader.argv = ["python3", "-m", "spatial_swarm.spatial_puzzle.enclave.run_enclave"]
+loader.env.LD_LIBRARY_PATH = "/lib:{{ arch_libdir }}"
+
+fs.mounts = [
+  { path = "/lib", uri = "file:{{ gramine.runtimedir() }}" },
+  { path = "/usr", uri = "file:/usr" },
+  { path = "/app", uri = "file:." },
+]
+
+sgx.enclave_size = "512M"
+sgx.max_threads = 8
+sgx.remote_attestation = "dcap"   # produce a DCAP quote for remote attestation
+sgx.debug = false                 # no debug enclave: no plaintext introspection
+
+# Only the application code is trusted/measured; no secret is read from the host FS.
+sgx.trusted_files = [
+  "file:{{ gramine.libos }}",
+  "file:{{ gramine.runtimedir() }}/",
+  "file:/app/",
+]
