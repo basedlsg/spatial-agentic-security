@@ -1,6 +1,10 @@
 # Finding: random vs 3D secret, commitment scheme held constant
 
-Status: internal finding (not a paper). Records measurements only.
+Status: internal finding (not a paper). Records measurements only. SUPERSEDED by
+`docs/findings_spatial_structure_hardness.md`, which uses real solvers (registration
++ assembly), real voxel pieces with connectors/topology, positive controls, and
+entropy-matched comparisons instead of the contiguous-chunk model and `comb()`
+arithmetic used here.
 
 Question: holding signatures, encryption, message binding, and the commitment
 scheme fixed, does a 3D-structured secret change how hard it is to obtain a hidden
