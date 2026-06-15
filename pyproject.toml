@@ -33,6 +33,7 @@ solvers = [
 [project.scripts]
 usag-run = "spatial_swarm.experiments.runner:main"
 spatial-swarm = "spatial_swarm.experiments.runner:main"
+spatial-puzzle = "spatial_swarm.spatial_puzzle.experiments.cli:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/spatial_swarm"]
