@@ -52,7 +52,10 @@ def _residual(sol: HiddenSolution, agent: str, *, shape, revealed_count, connect
     return None, res.found
 
 
-def evaluate_candidate(sol: HiddenSolution, *, ambiguity_target: int, budget_factory) -> RejectionVerdict:
+def evaluate_candidate(
+    sol: HiddenSolution, *, ambiguity_target: int, budget_factory,
+    min_solver_budget: Optional[tuple] = None,
+) -> RejectionVerdict:
     agent = sol.agent_ids()[len(sol.agent_ids()) // 2]
     reasons: list[str] = []
     per_clue: dict[str, Optional[int]] = {}
@@ -87,6 +90,16 @@ def evaluate_candidate(sol: HiddenSolution, *, ambiguity_target: int, budget_fac
     if graph_iso.congruence_leak(sol.pieces[agent], others):
         reasons.append("congruence_leak")
 
+    # adversarial filter: reject if a fast solver opens the target below a minimum budget
+    if min_solver_budget is not None:
+        r = pure_enum.solve(
+            region=sol.target, k=sol.k, commitment=sol.commitments[agent], swarm_id=sol.swarm_id,
+            agent_id=agent, repr_name=sol.repr_name, budget=Budget(*min_solver_budget),
+            mode="recover", require_connected=True,
+        )
+        if r.found:
+            reasons.append("solver_open_fast")
+
     accepted = (not reasons) and controls_pass
     return RejectionVerdict(accepted, reasons, residual, per_clue, controls_pass)
 
@@ -102,8 +115,13 @@ def generate_accepted(
     topo_bucket: int = 2,
     budget: tuple[float, int] = (3.0, 1_000_000),
     max_generation_attempts: int = 300,
+    min_solver_budget: Optional[tuple] = None,
 ) -> tuple[Optional[HiddenSolution], dict]:
-    """Loop until a puzzle survives the suite; return it plus yield + reason histogram."""
+    """Loop until a puzzle survives the suite; return it plus yield + reason histogram.
+
+    `min_solver_budget` enables the adversarial filter (reject if a fast solver opens the
+    target below that budget) on top of the standard rejection reasons.
+    """
 
     reasons = Counter()
     attempts = 0
@@ -115,7 +133,10 @@ def generate_accepted(
             rng, n=n, k=k, swarm_id=f"{swarm_id}-{attempts}", alphabet_size=alphabet_size,
             topo_bucket=topo_bucket,
         )
-        verdict = evaluate_candidate(sol, ambiguity_target=ambiguity_target, budget_factory=lambda: Budget(*budget))
+        verdict = evaluate_candidate(
+            sol, ambiguity_target=ambiguity_target, budget_factory=lambda: Budget(*budget),
+            min_solver_budget=min_solver_budget,
+        )
         if verdict.accepted:
             accepted_sol, accepted_verdict = sol, verdict
             break

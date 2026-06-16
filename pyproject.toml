@@ -34,6 +34,7 @@ solvers = [
 usag-run = "spatial_swarm.experiments.runner:main"
 spatial-swarm = "spatial_swarm.experiments.runner:main"
 spatial-puzzle = "spatial_swarm.spatial_puzzle.experiments.cli:main"
+spatial-stress = "spatial_swarm.spatial_puzzle.experiments.partial_compromise_stress:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/spatial_swarm"]

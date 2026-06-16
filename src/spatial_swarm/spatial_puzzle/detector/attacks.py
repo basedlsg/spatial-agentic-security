@@ -20,25 +20,33 @@ from spatial_swarm.spatial_puzzle.generators.polycube import connector_histogram
 from spatial_swarm.spatial_puzzle.generators.visibility import HiddenSolution
 from spatial_swarm.spatial_puzzle.solvers import graph_iso, pure_enum
 
-# Single-submission attack classes (repeated probing is a sequence, handled in metrics).
+# Single-submission attack classes. Repeated/probe variants (repeated_adaptive_probe,
+# silent_/verbose_fit_no_fit_probe) submit a wrong piece; their distinguishing behavior is
+# in the failure policy (strikes) / detector mode, exercised by the probing + silent/verbose
+# harnesses, so the single-candidate form here is a representative wrong piece.
 ATTACK_CLASSES = (
     "legit_true_piece",
     "random_wrong_piece",
     "stolen_neighbor",
+    "two_stolen_neighbors",
     "congruent_shape",
     "solver_opening_guess",
+    "solver_near_miss",
     "decoy_consistent_wrong",
+    "old_transcript_replay",
+    "partial_gateway_snapshot_forgery",
+    "artifact_directory_forgery",
+    "one_stolen_sidecar_non_target",
+    "repeated_adaptive_probe",
+    "silent_fit_no_fit_probe",
+    "verbose_fit_no_fit_probe",
 )
 
 # Ground-truth expectation per class (commitment is the catch floor for both detectors).
-RELEASED_EXPECTED = {
-    "legit_true_piece": True,
-    "solver_opening_guess": True,
-    "random_wrong_piece": False,
-    "stolen_neighbor": False,
-    "congruent_shape": False,
-    "decoy_consistent_wrong": False,
-}
+# Only the true piece and a commitment-opening solver guess release; everything else is caught.
+RELEASED_EXPECTED = {ac: False for ac in ATTACK_CLASSES}
+RELEASED_EXPECTED["legit_true_piece"] = True
+RELEASED_EXPECTED["solver_opening_guess"] = True
 
 
 def spec_for(attack_class: str) -> dict:
@@ -62,6 +70,8 @@ class AttackContext:
     true_hist: tuple = ()
     decoy_hist: Optional[tuple] = None
     congruent_subset: Optional[frozenset] = None
+    near_miss_subset: Optional[frozenset] = None        # wrong subset closest to the true piece
+    neighbor_pieces: list = field(default_factory=list)  # other agents' pieces (stolen-neighbor vectors)
     solver_recovered: Optional[frozenset] = None
     solver_recovered_ok: bool = False
 
@@ -94,6 +104,8 @@ def build_attack_context(sol: HiddenSolution, *, budget: tuple[float, int] = (5.
     congruent = next(
         (c for c in wrong_subsets if graph_iso.pieces_isomorphic(c, true_piece)), None
     )
+    near_miss = min(wrong_subsets, key=lambda c: len(c ^ true_piece)) if wrong_subsets else None
+    neighbor_pieces = [p for a, p in sol.pieces.items() if a != agent]
     res = pure_enum.solve(
         region=sol.target, k=sol.k, commitment=sol.commitments[agent], swarm_id=sol.swarm_id,
         agent_id=agent, repr_name=sol.repr_name, budget=Budget(*budget), mode="recover",
@@ -102,6 +114,7 @@ def build_attack_context(sol: HiddenSolution, *, budget: tuple[float, int] = (5.
     return AttackContext(
         sol=sol, agent=agent, true_piece=true_piece, subsets=subsets, wrong_subsets=wrong_subsets,
         true_hist=true_hist, decoy_hist=decoy_hist, congruent_subset=congruent,
+        near_miss_subset=near_miss, neighbor_pieces=neighbor_pieces,
         solver_recovered=res.recovered, solver_recovered_ok=(res.recovered == true_piece),
     )
 
@@ -113,12 +126,21 @@ def make_candidate(ctx: AttackContext, attack_class: str, rng: random.Random) ->
     if attack_class == "random_wrong_piece":
         return rng.choice(ctx.wrong_subsets) if ctx.wrong_subsets else None
     if attack_class == "stolen_neighbor":
-        others = [p for a, p in ctx.sol.pieces.items() if a != ctx.agent]
-        return rng.choice(others) if others else None
+        return rng.choice(ctx.neighbor_pieces) if ctx.neighbor_pieces else None
+    if attack_class == "two_stolen_neighbors":
+        # submit the second stolen neighbor (the first models stolen_neighbor / O3)
+        return ctx.neighbor_pieces[1] if len(ctx.neighbor_pieces) >= 2 else None
+    if attack_class == "one_stolen_sidecar_non_target":
+        return ctx.neighbor_pieces[0] if ctx.neighbor_pieces else None
+    if attack_class == "old_transcript_replay":
+        # a stale piece from an old transcript no longer opens the fresh commitment
+        return ctx.neighbor_pieces[0] if ctx.neighbor_pieces else None
     if attack_class == "congruent_shape":
         return ctx.congruent_subset
     if attack_class == "solver_opening_guess":
         return ctx.solver_recovered
+    if attack_class == "solver_near_miss":
+        return ctx.near_miss_subset
     if attack_class == "decoy_consistent_wrong":
         if ctx.decoy_hist is None:
             return None
@@ -127,4 +149,10 @@ def make_candidate(ctx: AttackContext, attack_class: str, rng: random.Random) ->
             if connector_histogram(c, ctx.sol.target, ctx.sol.alphabet_size) == ctx.decoy_hist
         ]
         return rng.choice(matches) if matches else None
+    if attack_class in (
+        "partial_gateway_snapshot_forgery", "artifact_directory_forgery",
+        "repeated_adaptive_probe", "silent_fit_no_fit_probe", "verbose_fit_no_fit_probe",
+    ):
+        # forgery from public/redacted state, or a probe submission: a wrong piece
+        return rng.choice(ctx.wrong_subsets) if ctx.wrong_subsets else None
     return None  # unreachable (spec_for already validated)
