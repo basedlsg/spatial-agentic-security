@@ -13,9 +13,12 @@ from __future__ import annotations
 
 import argparse
 import math
+import os
 import random
 import statistics
 import tempfile
+from collections import Counter
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 from typing import Optional
 
@@ -61,9 +64,105 @@ _FAST_SOLVER_BUDGET = (0.25, 50_000)   # "minimum budget" for the adversarial fi
 _RETRY_STRIKES = 5
 
 
+def _resolve_workers(requested: Optional[int]) -> int:
+    if requested is None or requested <= 0:
+        return max(1, min(8, os.cpu_count() or 1))
+    return max(1, requested)
+
+
+def _ordered_map(func, args: list[tuple], *, workers: int) -> list:
+    if workers <= 1 or len(args) <= 1:
+        return [func(a) for a in args]
+    with ProcessPoolExecutor(max_workers=workers) as ex:
+        return list(ex.map(func, args))
+
+
+def _seed_payload(args: tuple) -> dict:
+    s, n, k, budget = args
+    try:
+        arms = pcs_systems.build_arms(random.Random(s), n=n, k=k, swarm_id=f"pcs-{s}", budget=budget)
+    except RuntimeError as exc:
+        return {"seed": s, "ok": False, "error": str(exc)}
+    return {
+        "seed": s,
+        "ok": True,
+        "table": pcs_access.residual_table(arms, budget),
+        "entropy_match": arms["entropy_match"],
+        "random_plus_bits": arms["random_plus"].second_factor_bits,
+        "random_only_bits": arms["random_only"].second_factor_bits,
+    }
+
+
+def _collect_seed_payloads(*, n: int, k: int, budget: tuple, nseeds: int,
+                           seed_base: int, workers: int) -> tuple[list[dict], int]:
+    successes: list[dict] = []
+    gen_failures = 0
+    s = seed_base
+    stop = seed_base + nseeds * 10
+    batch_size = max(1, workers)
+    while len(successes) < nseeds and s < stop:
+        batch = list(range(s, min(s + batch_size, stop)))
+        s += len(batch)
+        results = sorted(
+            _ordered_map(_seed_payload, [(x, n, k, budget) for x in batch], workers=workers),
+            key=lambda r: r["seed"],
+        )
+        for result in results:
+            if len(successes) >= nseeds:
+                break
+            if result.get("ok"):
+                successes.append(result)
+            else:
+                gen_failures += 1
+    return successes, gen_failures
+
+
+def _reason_payload(args: tuple) -> dict:
+    s, n, k, budget, fast_budget = args
+    sol = build_hidden_solution(random.Random(s), n=n, k=k, swarm_id=f"unf-{s}")
+    v = evaluate_candidate(
+        sol, ambiguity_target=4, budget_factory=lambda: Budget(*budget),
+        min_solver_budget=fast_budget,
+    )
+    hist = Counter(v.reasons or [])
+    return {"n": 1, "accepted": int(v.accepted), "reason_histogram": dict(hist)}
+
+
+def _generation_payload(args: tuple) -> dict:
+    s, n, k, adversarial = args
+    _, stats = generate_accepted(
+        random.Random(s), n=n, k=k, swarm_id=f"flt-{s}",
+        ambiguity_target=(8 if adversarial else 4), max_generation_attempts=80,
+        min_solver_budget=(_FAST_SOLVER_BUDGET if adversarial else None),
+    )
+    return stats
+
+
+def _attack_payload(args: tuple) -> dict:
+    s, n, k, budget = args
+    sol = build_hidden_solution(random.Random(s), n=n, k=k, swarm_id=f"atk-{s}")
+    ctx = build_attack_context(sol, budget=budget)
+    per_class = {ac: {"released": 0, "blocked": 0, "constructible": 0} for ac in ATTACK_CLASSES}
+    for ai, ac in enumerate(ATTACK_CLASSES):
+        cand = make_candidate(ctx, ac, random.Random(s * 1000 + ai))
+        if cand is None:
+            continue
+        per_class[ac]["constructible"] += 1
+        det = NonGeometricTripwire(sol)
+        r = det.submit(Submission(sol.swarm_id, ctx.agent, cand, ac))
+        per_class[ac]["released"] += int(r.released)
+        per_class[ac]["blocked"] += int(r.blocked and not r.released)
+    return per_class
+
+
+def _emit_stage(logger: Optional[RunLogger], tier: str, stage: str, **extra) -> None:
+    if logger is not None:
+        logger.emit({"event": "tier_stage", "tier": tier, "stage": stage, **extra})
+
+
 # --------------------------------------------------------------------------- E1
 
-def _exp1_partial_compromise(seed_tables: list, arms_per_seed: list) -> dict:
+def _exp1_partial_compromise(seed_tables: list, seed_payloads: list) -> dict:
     levels = {}
     for level in pcs_access.ACCESS_LEVELS:
         sp_counts, sp_oneshot, enumerated, budget_hit = [], [], 0, 0
@@ -79,8 +178,9 @@ def _exp1_partial_compromise(seed_tables: list, arms_per_seed: list) -> dict:
                 sp_oneshot.append(cell["one_shot_success_prob"])
             if cell.get("budget_hit"):
                 budget_hit += 1
-        rp = arms_per_seed[0]["random_plus"]
-        ro = arms_per_seed[0]["random_only"]
+        first = seed_payloads[0]
+        rp_bits = first["random_plus_bits"]
+        ro_bits = first["random_only_bits"]
         levels[level.name] = {
             "revealed_neighbors": level.revealed_neighbors,
             "runs": level.runs,
@@ -92,34 +192,28 @@ def _exp1_partial_compromise(seed_tables: list, arms_per_seed: list) -> dict:
                 "one_shot_success_median": statistics.median(sp_oneshot) if sp_oneshot else None,
             } if level.runs else {"status": "not_run"},
             "random_plus": {
-                "second_factor_bits": rp.second_factor_bits,
-                "one_shot_success": 2.0 ** (-rp.second_factor_bits),
+                "second_factor_bits": rp_bits,
+                "one_shot_success": 2.0 ** (-rp_bits),
                 "note": "independent random factor: residual constant under stolen neighbors",
             } if level.runs else {"status": "not_run"},
             "random_only": {
-                "second_factor_bits": ro.second_factor_bits,
-                "one_shot_success": 2.0 ** (-ro.second_factor_bits),
+                "second_factor_bits": ro_bits,
+                "one_shot_success": 2.0 ** (-ro_bits),
             } if level.runs else {"status": "not_run"},
         }
     return {"access_levels": levels}
 
 
-def _attack_release_catch(seeds: list, n: int, k: int, budget: tuple) -> dict:
+def _attack_release_catch(seeds: list, n: int, k: int, budget: tuple, *, workers: int = 1) -> dict:
     """Run every attack class through the sealed (silent) tripwire on the spatial arm."""
 
     per_class = {ac: {"released": 0, "blocked": 0, "constructible": 0} for ac in ATTACK_CLASSES}
-    for s in seeds:
-        sol = build_hidden_solution(random.Random(s), n=n, k=k, swarm_id=f"atk-{s}")
-        ctx = build_attack_context(sol, budget=budget)
-        for ai, ac in enumerate(ATTACK_CLASSES):
-            cand = make_candidate(ctx, ac, random.Random(s * 1000 + ai))
-            if cand is None:
-                continue
-            per_class[ac]["constructible"] += 1
-            det = NonGeometricTripwire(sol)
-            r = det.submit(Submission(sol.swarm_id, ctx.agent, cand, ac))
-            per_class[ac]["released"] += int(r.released)
-            per_class[ac]["blocked"] += int(r.blocked and not r.released)
+    rows = _ordered_map(_attack_payload, [(s, n, k, budget) for s in seeds], workers=workers)
+    for row in rows:
+        for ac, d in row.items():
+            per_class[ac]["constructible"] += d["constructible"]
+            per_class[ac]["released"] += d["released"]
+            per_class[ac]["blocked"] += d["blocked"]
     out = {}
     for ac, d in per_class.items():
         ncon = d["constructible"]
@@ -196,36 +290,37 @@ def _exp3_silent_vs_verbose(*, n: int, k: int, seeds: int, budget: tuple, seed_b
 
 # --------------------------------------------------------------------------- E4
 
-def _measure_reasons(sols, *, budget: tuple, fast_budget: tuple) -> dict:
-    from collections import Counter
+def _merge_reason_payloads(rows: list[dict]) -> dict:
     hist = Counter()
     accepted = 0
-    for sol in sols:
-        v = evaluate_candidate(sol, ambiguity_target=4, budget_factory=lambda: Budget(*budget),
-                               min_solver_budget=fast_budget)
-        if v.accepted:
-            accepted += 1
-        for r in (v.reasons or []):
-            hist[r] += 1
-    return {"n": len(sols), "accepted": accepted, "reason_histogram": dict(hist)}
+    n = 0
+    for row in rows:
+        n += row["n"]
+        accepted += row["accepted"]
+        for r, c in row["reason_histogram"].items():
+            hist[r] += c
+    return {"n": n, "accepted": accepted, "reason_histogram": dict(hist)}
 
 
-def _exp4_generation_hygiene(*, n: int, k: int, seeds: int, budget: tuple, seed_base: int) -> dict:
+def _exp4_generation_hygiene(*, n: int, k: int, seeds: int, budget: tuple,
+                             seed_base: int, workers: int = 1) -> dict:
     # unfiltered: raw puzzles, measure how many weak instances slip through
-    raw = [build_hidden_solution(random.Random(s), n=n, k=k, swarm_id=f"unf-{s}")
-           for s in range(seed_base, seed_base + seeds)]
-    unfiltered = _measure_reasons(raw, budget=budget, fast_budget=_FAST_SOLVER_BUDGET)
+    raw_rows = _ordered_map(
+        _reason_payload,
+        [(s, n, k, budget, _FAST_SOLVER_BUDGET) for s in range(seed_base, seed_base + seeds)],
+        workers=workers,
+    )
+    unfiltered = _merge_reason_payloads(raw_rows)
 
     def _gen(adversarial: bool):
         attempts, accepted = [], 0
-        from collections import Counter
         hist = Counter()
-        for s in range(seed_base, seed_base + seeds):
-            sol, stats = generate_accepted(
-                random.Random(s), n=n, k=k, swarm_id=f"flt-{s}",
-                ambiguity_target=(8 if adversarial else 4), max_generation_attempts=80,
-                min_solver_budget=(_FAST_SOLVER_BUDGET if adversarial else None),
-            )
+        rows = _ordered_map(
+            _generation_payload,
+            [(s, n, k, adversarial) for s in range(seed_base, seed_base + seeds)],
+            workers=workers,
+        )
+        for stats in rows:
             attempts.append(stats["attempts"])
             accepted += int(stats["accepted"])
             for r, c in stats["reason_histogram"].items():
@@ -269,47 +364,56 @@ def _sealed_runtime_demo() -> dict:
 
 # --------------------------------------------------------------------------- tier
 
-def run_tier(tier: str, *, seeds: Optional[int] = None) -> dict:
+def run_tier(tier: str, *, seeds: Optional[int] = None, workers: int = 1,
+             logger: Optional[RunLogger] = None) -> dict:
     cfg = TIERS[tier]
     n, k, budget = cfg["n"], cfg["k"], cfg["budget"]
     nseeds = seeds or cfg["seeds"]
     seed_base = {"tiny": 10_000, "medium": 20_000, "large": 30_000}[tier]
 
-    arms_per_seed, seed_tables, gen_failures, seeds_used = [], [], 0, []
-    s = seed_base
-    while len(arms_per_seed) < nseeds and s < seed_base + nseeds * 10:
-        try:
-            arms = pcs_systems.build_arms(random.Random(s), n=n, k=k, swarm_id=f"pcs-{s}", budget=budget)
-        except RuntimeError:
-            gen_failures += 1
-            s += 1
-            continue
-        arms_per_seed.append(arms)
-        seed_tables.append(pcs_access.residual_table(arms, budget))
-        seeds_used.append(s)
-        s += 1
+    seed_payloads, gen_failures = _collect_seed_payloads(
+        n=n, k=k, budget=budget, nseeds=nseeds, seed_base=seed_base, workers=workers
+    )
+    seed_tables = [p["table"] for p in seed_payloads]
+    seeds_used = [p["seed"] for p in seed_payloads]
+    _emit_stage(logger, tier, "seed_tables_done", seeds=len(seed_payloads), failures=gen_failures)
 
     # Every experiment runs at every tier. Where a residual does not enumerate within
     # budget it is reported as such (None / not-enumerated); nothing is gated by assumption.
-    e1 = _exp1_partial_compromise(seed_tables, arms_per_seed)
+    e1 = _exp1_partial_compromise(seed_tables, seed_payloads)
+    _emit_stage(logger, tier, "E1_done")
     e5 = run_solver_bakeoff(n=n, k=k, budget=cfg["bakeoff"])
+    _emit_stage(logger, tier, "E5_done")
     e3 = _exp3_silent_vs_verbose(n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 7)
+    _emit_stage(logger, tier, "E3_done")
     e2 = _exp2_one_shot_vs_retry(seed_tables)
-    rp_bits = arms_per_seed[0]["random_plus"].second_factor_bits if arms_per_seed else None
+    rp_bits = seed_payloads[0]["random_plus_bits"] if seed_payloads else None
     for lvl in e2.values():
         if isinstance(lvl, dict) and "random_plus_one_shot_recovery" in lvl and rp_bits:
             lvl["random_plus_one_shot_recovery"] = 2.0 ** (-rp_bits)
-    e4 = _exp4_generation_hygiene(n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 13)
-    attacks = _attack_release_catch(seeds_used, n, k, budget)
+    _emit_stage(logger, tier, "E2_done")
+    e4 = _exp4_generation_hygiene(
+        n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 13, workers=workers
+    )
+    _emit_stage(logger, tier, "E4_done")
+    attacks = _attack_release_catch(seeds_used, n, k, budget, workers=workers)
+    _emit_stage(logger, tier, "attacks_done")
+    first_arms = (
+        pcs_systems.build_arms(
+            random.Random(seeds_used[0]), n=n, k=k, swarm_id=f"pcs-{seeds_used[0]}", budget=budget
+        )
+        if seeds_used else None
+    )
     shutdown = {
-        "one_shot": _shutdown_demo(arms_per_seed[0]["spatial"], strikes=1) if arms_per_seed else None,
-        "retry": _shutdown_demo(arms_per_seed[0]["spatial"], strikes=_RETRY_STRIKES) if arms_per_seed else None,
+        "one_shot": _shutdown_demo(first_arms["spatial"], strikes=1) if first_arms else None,
+        "retry": _shutdown_demo(first_arms["spatial"], strikes=_RETRY_STRIKES) if first_arms else None,
     }
-    entropy_match = arms_per_seed[0]["entropy_match"] if arms_per_seed else None
+    entropy_match = seed_payloads[0]["entropy_match"] if seed_payloads else None
 
     return {
-        "config": {"tier": tier, "n": n, "k": k, "seeds": len(arms_per_seed),
-                   "budget_seconds": budget[0], "budget_nodes": budget[1], "exact": cfg["exact"]},
+        "config": {"tier": tier, "n": n, "k": k, "seeds": len(seed_payloads),
+                   "budget_seconds": budget[0], "budget_nodes": budget[1], "exact": cfg["exact"],
+                   "workers": workers},
         "entropy_match": entropy_match,
         "generation_failures": gen_failures,
         "E1_partial_compromise": e1,
@@ -340,9 +444,12 @@ def main(argv: Optional[list] = None) -> Path:
     parser.add_argument("--tier", default="tiny", choices=["tiny", "medium", "large", "all"])
     parser.add_argument("--seeds", type=int, default=None)
     parser.add_argument("--output-root", default="runs")
+    parser.add_argument("--workers", type=int, default=None,
+                        help="parallel worker processes for independent seed/stage work; default auto")
     args = parser.parse_args(argv)
 
     tiers = ["tiny", "medium", "large"] if args.tier == "all" else [args.tier]
+    workers = _resolve_workers(args.workers)
     run_dir = Path(args.output_root) / utc_run_id()
     run_dir.mkdir(parents=True, exist_ok=True)
     logger = RunLogger(run_dir)
@@ -356,8 +463,8 @@ def main(argv: Optional[list] = None) -> Path:
 
     tier_results = {}
     for tier in tiers:
-        logger.emit({"event": "tier_start", "tier": tier})
-        tier_results[tier] = run_tier(tier, seeds=args.seeds)
+        logger.emit({"event": "tier_start", "tier": tier, "workers": workers})
+        tier_results[tier] = run_tier(tier, seeds=args.seeds, workers=workers, logger=logger)
         logger.emit({"event": "tier_done", "tier": tier,
                      "seeds": tier_results[tier]["config"]["seeds"]})
 
@@ -370,7 +477,8 @@ def main(argv: Optional[list] = None) -> Path:
     }
 
     config = {"experiment": "partial_compromise_stress", "tiers": tiers,
-              "seeds_override": args.seeds, "secret_material_redacted": True}
+              "seeds_override": args.seeds, "workers": workers,
+              "secret_material_redacted": True}
     write_yaml_like(run_dir / "config.yaml", config)
     write_environment(run_dir)
     write_git_commit(run_dir)
