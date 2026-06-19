@@ -49,12 +49,13 @@ from spatial_swarm.spatial_puzzle.experiments.orchestrate import run_solver_bake
 from spatial_swarm.spatial_puzzle.generators.build import build_hidden_solution
 from spatial_swarm.spatial_puzzle.generators.rejection import evaluate_candidate, generate_accepted
 
-# Per-seed budgets are small at the budgeted tiers so non-enumerable residuals trip fast and
-# are reported as "not solved within budget"; the E5 bake-off gets a generous one-off budget.
+# Real per-seed budgets so residuals genuinely enumerate where feasible; budgets are
+# ceilings (cheap instances finish fast) and any genuine budget-stop is reported as
+# "not solved within budget". Every experiment runs at every tier (no assumption-gating).
 TIERS = {
     "tiny":   {"n": 3, "k": 4,  "seeds": 30, "budget": (10.0, 3_000_000), "bakeoff": (20.0, 5_000_000), "exact": True},
-    "medium": {"n": 4, "k": 8,  "seeds": 30, "budget": (2.0, 500_000),    "bakeoff": (20.0, 5_000_000), "exact": False},
-    "large":  {"n": 5, "k": 10, "seeds": 10, "budget": (2.0, 500_000),    "bakeoff": (30.0, 8_000_000), "exact": False},
+    "medium": {"n": 4, "k": 8,  "seeds": 30, "budget": (20.0, 5_000_000), "bakeoff": (20.0, 5_000_000), "exact": False},
+    "large":  {"n": 5, "k": 10, "seeds": 10, "budget": (30.0, 8_000_000), "bakeoff": (30.0, 8_000_000), "exact": False},
 }
 _FAST_SOLVER_BUDGET = (0.25, 50_000)   # "minimum budget" for the adversarial filter / solver-open leak
 _RETRY_STRIKES = 5
@@ -288,30 +289,18 @@ def run_tier(tier: str, *, seeds: Optional[int] = None) -> dict:
         seeds_used.append(s)
         s += 1
 
+    # Every experiment runs at every tier. Where a residual does not enumerate within
+    # budget it is reported as such (None / not-enumerated); nothing is gated by assumption.
     e1 = _exp1_partial_compromise(seed_tables, arms_per_seed)
     e5 = run_solver_bakeoff(n=n, k=k, budget=cfg["bakeoff"])
-    if cfg["exact"]:
-        e3 = _exp3_silent_vs_verbose(n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 7)
-    else:
-        e3 = {"silent_reason_bits": 0.0, "verbose_reason_bits": math.log2(4),
-              "residual_shape_only_median": None, "residual_after_reasons_median": None,
-              "verbose_max_leak_bits": None,
-              "note": "verbose>silent established at the exact tier; residual leak not enumerated at budgeted tier"}
-
-    # E2 (enumerated residuals), E4 (generation hygiene), and the full attack matrix all
-    # require exact enumeration; run them only at the exact tier. At budgeted tiers the
-    # residual is "not solved within budget" (see E1 enumerated rate) and these are skipped.
-    if cfg["exact"]:
-        e2 = _exp2_one_shot_vs_retry(seed_tables)
-        rp_bits = arms_per_seed[0]["random_plus"].second_factor_bits if arms_per_seed else None
-        for lvl in e2.values():
-            if isinstance(lvl, dict) and "random_plus_one_shot_recovery" in lvl and rp_bits:
-                lvl["random_plus_one_shot_recovery"] = 2.0 ** (-rp_bits)
-        e4 = _exp4_generation_hygiene(n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 13)
-        attacks = _attack_release_catch(seeds_used, n, k, budget)
-    else:
-        skip = {"status": "skipped_budgeted_tier", "reason": "exact enumeration not feasible within budget"}
-        e2, e4, attacks = skip, skip, skip
+    e3 = _exp3_silent_vs_verbose(n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 7)
+    e2 = _exp2_one_shot_vs_retry(seed_tables)
+    rp_bits = arms_per_seed[0]["random_plus"].second_factor_bits if arms_per_seed else None
+    for lvl in e2.values():
+        if isinstance(lvl, dict) and "random_plus_one_shot_recovery" in lvl and rp_bits:
+            lvl["random_plus_one_shot_recovery"] = 2.0 ** (-rp_bits)
+    e4 = _exp4_generation_hygiene(n=n, k=k, seeds=nseeds, budget=budget, seed_base=seed_base + 13)
+    attacks = _attack_release_catch(seeds_used, n, k, budget)
     shutdown = {
         "one_shot": _shutdown_demo(arms_per_seed[0]["spatial"], strikes=1) if arms_per_seed else None,
         "retry": _shutdown_demo(arms_per_seed[0]["spatial"], strikes=_RETRY_STRIKES) if arms_per_seed else None,
