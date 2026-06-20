@@ -37,6 +37,7 @@ spatial-puzzle = "spatial_swarm.spatial_puzzle.experiments.cli:main"
 spatial-stress = "spatial_swarm.spatial_puzzle.experiments.partial_compromise_stress:main"
 spatial-formation-gate = "spatial_swarm.spatial_puzzle.experiments.formation_gate:main"
 spatial-realistic-gate = "spatial_swarm.spatial_puzzle.experiments.realistic_coding_gate:main"
+spatial-realistic-gate-v2 = "spatial_swarm.spatial_puzzle.experiments.realistic_coding_gate_v2:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/spatial_swarm"]
