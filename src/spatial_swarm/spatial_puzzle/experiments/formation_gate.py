@@ -189,7 +189,7 @@ def _risk_for_action(action: ActionRequest) -> str:
         return "high"
     if any(token in text for token in ("rm -rf", "api_key", "token", "secret", "curl ", "ssh ")):
         return "high"
-    if action.kind in {"edit_file", "run_command", "dependency_change"}:
+    if action.kind in {"edit_file", "run_command", "run_tests", "dependency_change"}:
         return "medium"
     return "low"
 
