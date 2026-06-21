@@ -39,6 +39,7 @@ spatial-formation-gate = "spatial_swarm.spatial_puzzle.experiments.formation_gat
 spatial-realistic-gate = "spatial_swarm.spatial_puzzle.experiments.realistic_coding_gate:main"
 spatial-realistic-gate-v2 = "spatial_swarm.spatial_puzzle.experiments.realistic_coding_gate_v2:main"
 spatial-real-sandbox-gate-v3 = "spatial_swarm.spatial_puzzle.experiments.real_sandbox_gate_v3:main"
+spatial-minimal-core-gate-v1 = "spatial_swarm.spatial_puzzle.experiments.minimal_core_gate_v1:main"
 spatial-geometric-formation-lab = "spatial_swarm.spatial_puzzle.experiments.geometric_formation_lab:main"
 
 [tool.hatch.build.targets.wheel]
