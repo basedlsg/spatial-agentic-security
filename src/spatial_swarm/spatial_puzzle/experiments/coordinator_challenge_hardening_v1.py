@@ -158,6 +158,7 @@ class ChallengeGateGuard:
     min_block_ms: float = 4.0
     public_log_bytes: int = V3.PUBLIC_LOG_BYTES
     container_image: str = "slop-code:python3.12"
+    sandbox_timeout_ms: int = 60000
     minimal_core: MCG.MinimalGuard = field(default_factory=MCG.MinimalGuard)
 
     def verifier_config(
@@ -190,6 +191,7 @@ class ChallengeGateGuard:
             min_block_ms=self.min_block_ms,
             public_log_bytes=self.public_log_bytes,
             container_image=self.container_image,
+            timeout_ms=self.sandbox_timeout_ms,
         )
 
 
@@ -1633,6 +1635,7 @@ def main(argv: Optional[list[str]] = None) -> Path:
     parser.add_argument("--output-root", default="runs")
     parser.add_argument("--container-image", default=SandboxSpec().container_image)
     parser.add_argument("--min-block-ms", type=float, default=4.0)
+    parser.add_argument("--sandbox-timeout-ms", type=int, default=60000)
     args = parser.parse_args(argv)
     docker = _docker_info(args.container_image)
     if not docker["available"]:
@@ -1640,7 +1643,12 @@ def main(argv: Optional[list[str]] = None) -> Path:
     guard = ChallengeGateGuard(
         min_block_ms=args.min_block_ms,
         container_image=args.container_image,
-        minimal_core=MCG.MinimalGuard(container_image=args.container_image, min_block_ms=args.min_block_ms),
+        sandbox_timeout_ms=args.sandbox_timeout_ms,
+        minimal_core=MCG.MinimalGuard(
+            container_image=args.container_image,
+            min_block_ms=args.min_block_ms,
+            timeout_ms=args.sandbox_timeout_ms,
+        ),
     )
     metrics, rows, transcripts = run_experiment(
         mode=args.mode,

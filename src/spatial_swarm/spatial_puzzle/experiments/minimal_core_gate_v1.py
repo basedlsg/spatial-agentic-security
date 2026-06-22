@@ -111,6 +111,7 @@ class MinimalGuard:
     min_block_ms: float = 4.0
     public_log_bytes: int = V3.PUBLIC_LOG_BYTES
     container_image: str = "slop-code:python3.12"
+    timeout_ms: int = 15000
 
     def v3(self) -> V3.GuardConfig:
         return V3.GuardConfig(
@@ -128,6 +129,7 @@ class MinimalGuard:
             min_block_ms=self.min_block_ms,
             public_log_bytes=self.public_log_bytes,
             container_image=self.container_image,
+            timeout_ms=self.timeout_ms,
         )
 
 

@@ -184,6 +184,7 @@ class GuardConfig:
     min_block_ms: float = 4.0
     public_log_bytes: int = PUBLIC_LOG_BYTES
     container_image: str = "slop-code:python3.12"
+    timeout_ms: int = 15000
 
     def spec_for(self, raw: RawAction) -> SandboxSpec:
         env = dict(DEFAULT_ENV)
@@ -193,6 +194,7 @@ class GuardConfig:
             allowed_env=env,
             network_mode="off" if self.network_isolation else "bridge",
             container_image=self.container_image,
+            timeout_ms=self.timeout_ms,
         )
 
 
