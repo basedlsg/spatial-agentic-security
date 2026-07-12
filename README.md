@@ -15,10 +15,11 @@ The simulator examines one narrow question:
 > Under the stated configuration, does an unauthorized or fake agent get a message
 > released without holding the per-agent secret that opens its commitment?
 
-The simulator is intentionally local and deterministic. It uses logical agents, private
+The core simulator is intentionally local and deterministic. It uses logical agents, private
 sidecars, Ed25519 signatures, sealed proof payloads, finite-field 3D transforms, a central
 gateway, one-shot proof envelopes, JSONL logs, and executable adversary classes. It does
-not start real LLM agents or containers.
+not start real LLM agents by default. The optional Keystone v2 benchmark runs an explicitly
+selected, locally cached model in offline mode and never requires a paid inference API.
 
 ## First Demo
 
@@ -28,6 +29,7 @@ uv run spatial-swarm benchmark v0_2_matrix --attempts=1
 uv run spatial-swarm benchmark baseline_matrix --attempts=1
 uv run spatial-swarm benchmark ablation_matrix --attempts=1
 uv run spatial-swarm benchmark fuzz_10000 --attempts=2
+uv run spatial-keystone-v2 --plan
 ```
 
 Every run writes a timestamped directory under `runs/`:
@@ -70,6 +72,9 @@ not include raw fragments, private signing keys, or decrypted sidecar payloads.
 - deterministic packet fuzzing for malformed packets, mixed packet sets, and replay mutations
 - reproducible JSONL experiment logs and generated metrics
 - pytest and Hypothesis coverage for protocol invariants
+- a 12-task paired coding corpus with executable behavioral harm oracles
+- offline semantic-review arms with tamper-evident exact-prompt and raw-output artifacts
+- paired signed-quorum/spatial replay over the same cached reviewer vote vector
 
 ## What Is Not Claimed
 
@@ -145,7 +150,13 @@ uv run spatial-swarm benchmark v0_6_ai_forgery
 uv run spatial-swarm benchmark v0_6_snapshot_forgery
 uv run spatial-swarm benchmark v0_6_process_sidecar
 uv run spatial-swarm benchmark v0_6_focused
+uv run spatial-keystone-v2 --plan --tasks access_control,path_confinement \
+  --arms reference_monitor_only,role_view_separated --regimes clean,one_poisoned
 ```
+
+Keystone v2 requires an explicit local model path for an actual run. It estimates the
+number of local model calls first and refuses runs above `--max-model-calls`; use `--plan`
+to inspect a matrix without loading a model.
 
 The project supports Python 3.9+ because the current local system Python is 3.9.6.
 

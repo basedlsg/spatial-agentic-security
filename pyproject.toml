@@ -42,6 +42,7 @@ spatial-real-sandbox-gate-v3 = "spatial_swarm.spatial_puzzle.experiments.real_sa
 spatial-minimal-core-gate-v1 = "spatial_swarm.spatial_puzzle.experiments.minimal_core_gate_v1:main"
 spatial-coordinator-challenge-hardening-v1 = "spatial_swarm.spatial_puzzle.experiments.coordinator_challenge_hardening_v1:main"
 spatial-geometric-formation-lab = "spatial_swarm.spatial_puzzle.experiments.geometric_formation_lab:main"
+spatial-keystone-v2 = "spatial_swarm.spatial_puzzle.experiments.keystone_v2:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/spatial_swarm"]

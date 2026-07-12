@@ -159,6 +159,7 @@ class LocalMLXReviewer:
         max_tokens: int = 192,
         timeout_seconds: float = 120.0,
         seed: int = 0,
+        temperature: float = 0.0,
     ) -> None:
         self.model_path = model_path.resolve()
         if not self.model_path.is_dir():
@@ -170,6 +171,9 @@ class LocalMLXReviewer:
         self.max_tokens = max_tokens
         self.timeout_seconds = timeout_seconds
         self.seed = seed
+        if temperature < 0:
+            raise ValueError("temperature must be non-negative")
+        self.temperature = temperature
 
     def review(self, request: ReviewRequest) -> ReviewDecision:
         system_prompt = (
@@ -198,7 +202,7 @@ class LocalMLXReviewer:
             "--max-tokens",
             str(self.max_tokens),
             "--temp",
-            "0",
+            str(self.temperature),
             "--seed",
             str(self.seed),
             "--verbose",
