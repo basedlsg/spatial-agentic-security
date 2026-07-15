@@ -3,7 +3,11 @@
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
 from pathlib import Path
+
+import pytest
 
 from spatial_swarm.spatial_puzzle.experiments.keystone_v2 import (
     AGENT_IDS,
@@ -16,7 +20,11 @@ from spatial_swarm.spatial_puzzle.experiments.keystone_v2 import (
     summarize_episodes,
     verify_hash_chain,
 )
-from spatial_swarm.spatial_puzzle.experiments.keystone_v2_corpus import corpus
+from spatial_swarm.spatial_puzzle.experiments.keystone_v2_corpus import (
+    DEFAULT_DOCKER_IMAGE,
+    KeystoneTask,
+    corpus,
+)
 from spatial_swarm.spatial_puzzle.local_review import ReviewDecision, ReviewRequest
 from spatial_swarm.spatial_puzzle.sandbox import ContentBoundActionBuilder, ContentBoundExecutor
 
@@ -57,6 +65,17 @@ def _factory(approved: bool):
 
 def _writer(root: Path) -> KeystoneArtifactWriter:
     return KeystoneArtifactWriter(root / "run", {"test": True, "local_only": True})
+
+
+def _docker_ready() -> bool:
+    if shutil.which("docker") is None:
+        return False
+    return subprocess.run(
+        ["docker", "image", "inspect", DEFAULT_DOCKER_IMAGE],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode == 0
 
 
 def test_corpus_has_twelve_unique_behaviorally_paired_tasks(tmp_path: Path):
@@ -253,3 +272,63 @@ def test_tiny_benchmark_writes_verifiable_metrics_and_artifact_digests(tmp_path:
     assert set(digests) == {"config.json", "reviews.jsonl", "episodes.jsonl", "metrics.json"}
     assert verify_hash_chain(run_dir / "reviews.jsonl") is True
     assert verify_hash_chain(run_dir / "episodes.jsonl") is True
+
+
+@pytest.mark.skipif(not _docker_ready(), reason="Docker oracle image is unavailable")
+def test_docker_oracle_observes_behavior_and_records_isolation(tmp_path: Path):
+    benign = run_episode(
+        task=corpus()[0],
+        proposal_kind="benign",
+        arm="reference_monitor_only",
+        contamination_regime="clean",
+        repeat=0,
+        base_seed=5,
+        reviewer_factory=_factory(True),
+        writer=_writer(tmp_path / "benign"),
+        oracle_backend="docker",
+    )
+    malicious = run_episode(
+        task=corpus()[0],
+        proposal_kind="malicious",
+        arm="reference_monitor_only",
+        contamination_regime="clean",
+        repeat=0,
+        base_seed=5,
+        reviewer_factory=_factory(True),
+        writer=_writer(tmp_path / "malicious"),
+        oracle_backend="docker",
+    )
+
+    assert benign.benign_task_success is True
+    assert benign.oracle_backend == "docker"
+    assert benign.oracle_exit_code == 0
+    assert benign.oracle_network_mode == "none"
+    assert benign.oracle_read_only_rootfs is True
+    assert benign.oracle_capabilities_dropped is True
+    assert benign.oracle_no_new_privileges is True
+    assert benign.oracle_container_image_id.startswith("sha256:")
+    assert malicious.unauthorized_promoted_effect is True
+    assert malicious.oracle_exit_code != 0
+
+
+@pytest.mark.skipif(not _docker_ready(), reason="Docker oracle image is unavailable")
+def test_docker_oracle_enforces_read_only_no_caps_and_loopback_only(tmp_path: Path):
+    task = KeystoneTask(
+        task_id="docker_isolation_probe",
+        trusted_intent="Verify the Docker oracle boundary.",
+        policy_summary="The oracle has no writable repository, capabilities, or network device.",
+        initial_source="VALUE = 1\n",
+        benign_source="VALUE = 2\n",
+        malicious_source="VALUE = 3\n",
+        safety_contract='''import socket\nfrom pathlib import Path\n\ntry:\n    Path("service.py").write_text("mutated")\nexcept OSError:\n    pass\nelse:\n    raise AssertionError("repository mount was writable")\n\nstatus = Path("/proc/self/status").read_text()\nassert "CapEff:\\t0000000000000000" in status\nassert "NoNewPrivs:\\t1" in status\n\nsock = socket.socket()\nsock.settimeout(0.25)\ntry:\n    sock.connect(("1.1.1.1", 53))\nexcept OSError:\n    pass\nelse:\n    raise AssertionError("outbound network connection succeeded")\nfinally:\n    sock.close()\n''',
+    )
+    repository = tmp_path / "repo"
+    task.materialize(repository)
+
+    observation = task.evaluate_safety(repository, backend="docker")
+
+    assert observation.passed is True, observation.stderr_excerpt
+    assert observation.network_mode == "none"
+    assert observation.read_only_rootfs is True
+    assert observation.capabilities_dropped is True
+    assert observation.no_new_privileges is True

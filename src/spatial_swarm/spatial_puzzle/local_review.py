@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import shutil
 import subprocess
+import sys
+import threading
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Protocol, Sequence
+from typing import Any, Protocol, Sequence
 
 from spatial_swarm.crypto.hashing import canonical_json, sha256_hex
 from spatial_swarm.spatial_puzzle.sandbox.content_bound import ActionEnvelopeV4, ExactPatch
@@ -148,6 +151,248 @@ class UnanimousSemanticGate:
         )
 
 
+class PersistentModelWorkerClient:
+    """Thread-safe client manager for the long-lived model worker process."""
+
+    _instance = None
+    _lock = threading.RLock()
+    _instances = []
+
+    def __init__(self, model_path: Path, env: dict[str, str]) -> None:
+        self.model_path = model_path
+        self.env = env
+        self.process = None
+        self.lock = threading.Lock()
+        self.disabled = False
+        with self._lock:
+            self._instances.append(self)
+
+    @classmethod
+    def get_instance(cls, model_path: Path) -> PersistentModelWorkerClient:
+        with cls._lock:
+            resolved_path = model_path.resolve()
+            if cls._instance is not None and cls._instance.model_path != resolved_path:
+                cls._instance.shutdown()
+                cls._instance = None
+            if cls._instance is None:
+                offline_env = {
+                    "HF_HUB_OFFLINE": "1",
+                    "TRANSFORMERS_OFFLINE": "1",
+                    "HF_DATASETS_OFFLINE": "1",
+                }
+                cls._instance = cls(resolved_path, offline_env)
+            return cls._instance
+
+    @classmethod
+    def shutdown_all(cls) -> None:
+        with cls._lock:
+            instances = list(cls._instances)
+        for inst in instances:
+            try:
+                inst.shutdown()
+            except Exception:
+                pass
+
+    def _start_worker(self) -> None:
+        if self.disabled:
+            raise RuntimeError("Client is disabled")
+        if self.process is not None and self.process.poll() is None:
+            return
+
+        cmd = [
+            sys.executable,
+            "-m",
+            "spatial_swarm.spatial_puzzle.model_worker",
+            "--model",
+            str(self.model_path)
+        ]
+
+        worker_env = dict(os.environ)
+        worker_env.update(self.env)
+
+        self.process = subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,  # Line-buffered
+            env=worker_env
+        )
+
+        assert self.process.stderr is not None
+        import select
+
+        accumulated_lines = []
+        timeout = 30.0
+        start_time = time.perf_counter()
+
+        while True:
+            elapsed = time.perf_counter() - start_time
+            remaining = timeout - elapsed
+            if remaining <= 0:
+                break
+
+            rlist, _, _ = select.select([self.process.stderr], [], [], max(0.0, remaining))
+            if not rlist:
+                break
+
+            line = self.process.stderr.readline()
+            if line == "":
+                break
+            accumulated_lines.append(line)
+            if "READY" in line:
+                break
+
+        has_ready = any("READY" in l for l in accumulated_lines)
+        if not has_ready:
+            remaining_data = ""
+            try:
+                import fcntl
+                fd = self.process.stderr.fileno()
+                fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+                fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+                remaining_data = self.process.stderr.read() or ""
+            except Exception:
+                pass
+
+            all_logs = "".join(accumulated_lines) + remaining_data
+            self._cleanup_process()
+            raise RuntimeError(
+                f"Model worker failed to start. Traceback/Logs:\n"
+                f"{all_logs}"
+            )
+
+    def query(
+        self,
+        system_prompt: str,
+        user_prompt: str,
+        max_tokens: int,
+        temperature: float,
+        seed: int,
+        timeout: float
+    ) -> dict[str, Any]:
+        if self.disabled:
+            active_client = self.get_instance(self.model_path)
+            return active_client.query(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                seed=seed,
+                timeout=timeout
+            )
+        with self.lock:
+            if self.disabled:
+                should_delegate = True
+            else:
+                should_delegate = False
+                for attempt in (1, 2):
+                    try:
+                        self._start_worker()
+
+                        req = {
+                            "system_prompt": system_prompt,
+                            "prompt": user_prompt,
+                            "max_tokens": max_tokens,
+                            "temperature": temperature,
+                            "seed": seed
+                        }
+
+                        assert self.process is not None
+                        assert self.process.stdin is not None
+                        self.process.stdin.write(json.dumps(req) + "\n")
+                        self.process.stdin.flush()
+
+                        assert self.process.stdout is not None
+
+                        import select
+                        import fcntl
+
+                        fd = self.process.stdout.fileno()
+                        fl = fcntl.fcntl(fd, fcntl.F_GETFL)
+                        fcntl.fcntl(fd, fcntl.F_SETFL, fl | os.O_NONBLOCK)
+
+                        buffer = bytearray()
+                        start_time = time.perf_counter()
+                        while True:
+                            remaining = timeout - (time.perf_counter() - start_time)
+                            if remaining <= 0:
+                                raise TimeoutError(f"Model worker query timed out after {timeout} seconds")
+
+                            rlist, _, _ = select.select([fd], [], [], max(0.0, remaining))
+                            if not rlist:
+                                raise TimeoutError(f"Model worker query timed out after {timeout} seconds")
+
+                            try:
+                                b = os.read(fd, 1)
+                            except (BlockingIOError, InterruptedError):
+                                continue
+
+                            if not b:
+                                # EOF reached
+                                break
+                            buffer.extend(b)
+                            if b == b"\n":
+                                break
+
+                        line = buffer.decode("utf-8")
+                        if not line:
+                            raise RuntimeError("Worker process stdout closed unexpectedly.")
+
+                        return json.loads(line)
+                    except Exception as exc:
+                        self._cleanup_process()
+                        if attempt == 2:
+                            raise RuntimeError(f"Model worker failed twice. Error: {exc}")
+                raise RuntimeError("Model worker failed all attempts.")
+
+        if should_delegate:
+            active_client = self.get_instance(self.model_path)
+            return active_client.query(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                seed=seed,
+                timeout=timeout
+            )
+
+    def _cleanup_process(self) -> None:
+        if self.process is not None:
+            try:
+                if self.process.stdin:
+                    self.process.stdin.close()
+            except Exception:
+                pass
+            try:
+                if self.process.stdout:
+                    self.process.stdout.close()
+            except Exception:
+                pass
+            try:
+                if self.process.stderr:
+                    self.process.stderr.close()
+            except Exception:
+                pass
+            if self.process.poll() is None:
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=2.0)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+            self.process = None
+
+    def shutdown(self) -> None:
+        with self.lock:
+            self.disabled = True
+            self._cleanup_process()
+
+
+# Register clean teardown at Python exit
+atexit.register(PersistentModelWorkerClient.shutdown_all)
+
+
 class LocalMLXReviewer:
     """Run one reviewer call through a local MLX model with networking disabled."""
 
@@ -165,9 +410,7 @@ class LocalMLXReviewer:
         if not self.model_path.is_dir():
             raise ValueError("local model path must be an existing directory")
         resolved_executable = shutil.which(executable)
-        if resolved_executable is None:
-            raise ValueError(f"local MLX executable not found: {executable}")
-        self.executable = resolved_executable
+        self.executable = resolved_executable or executable
         self.max_tokens = max_tokens
         self.timeout_seconds = timeout_seconds
         self.seed = seed
@@ -183,51 +426,28 @@ class LocalMLXReviewer:
             "the trusted intent. Return exactly one JSON object with keys decision, action_hash, "
             "and reason. decision must be approve or deny. Copy the supplied action_hash exactly."
         )
-        env = dict(os.environ)
-        env.update(
-            {
-                "HF_HUB_OFFLINE": "1",
-                "TRANSFORMERS_OFFLINE": "1",
-                "HF_DATASETS_OFFLINE": "1",
-            }
-        )
-        command = [
-            self.executable,
-            "--model",
-            str(self.model_path),
-            "--system-prompt",
-            system_prompt,
-            "--prompt",
-            "-",
-            "--max-tokens",
-            str(self.max_tokens),
-            "--temp",
-            str(self.temperature),
-            "--seed",
-            str(self.seed),
-            "--verbose",
-            "false",
-        ]
         started = time.perf_counter()
         try:
-            completed = subprocess.run(
-                command,
-                input=request.prompt(),
-                text=True,
-                capture_output=True,
-                timeout=self.timeout_seconds,
-                check=False,
-                env=env,
+            client = PersistentModelWorkerClient.get_instance(self.model_path)
+            res = client.query(
+                system_prompt=system_prompt,
+                user_prompt=request.prompt(),
+                max_tokens=self.max_tokens,
+                temperature=self.temperature,
+                seed=self.seed,
+                timeout=self.timeout_seconds
             )
-        except (OSError, subprocess.TimeoutExpired) as exc:
+            raw_output = res.get("response", "")
+            latency_ms = res.get("latency_ms", (time.perf_counter() - started) * 1000)
+        except Exception as exc:
             latency_ms = (time.perf_counter() - started) * 1000
             return _failed_decision(request, "runtime_error", str(exc), latency_ms)
-        latency_ms = (time.perf_counter() - started) * 1000
-        if completed.returncode != 0:
-            detail = completed.stderr.strip()[:500] or f"exit_{completed.returncode}"
-            return _failed_decision(request, "runtime_error", detail, latency_ms)
+
+        if "error" in res:
+            return _failed_decision(request, "runtime_error", res["error"], latency_ms)
+
         return parse_review_output(
-            completed.stdout,
+            raw_output,
             request=request,
             model=str(self.model_path),
             latency_ms=latency_ms,

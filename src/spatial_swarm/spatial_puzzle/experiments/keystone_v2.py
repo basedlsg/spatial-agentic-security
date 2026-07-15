@@ -25,10 +25,13 @@ from spatial_swarm.experiments.metrics import process_resource_use, write_metric
 from spatial_swarm.experiments.report import utc_run_id, write_environment, write_git_commit
 from spatial_swarm.spatial_puzzle.experiments import formation_gate as FG
 from spatial_swarm.spatial_puzzle.experiments.keystone_v2_corpus import (
+    DEFAULT_DOCKER_IMAGE,
     EVIDENCE_CHANNELS,
     PROPOSAL_KINDS,
     KeystoneTask,
+    OracleObservation,
     corpus,
+    docker_image_id,
 )
 from spatial_swarm.spatial_puzzle.local_review import (
     REVIEW_ROLES,
@@ -119,6 +122,21 @@ class EpisodeResult:
     benign_task_success: bool
     false_block: bool
     execution_reason: str
+    oracle_executed: bool
+    oracle_backend: str
+    oracle_exit_code: Optional[int]
+    oracle_latency_ms: float
+    oracle_timed_out: bool
+    oracle_stdout_sha256: str
+    oracle_stderr_sha256: str
+    oracle_stdout_excerpt: str
+    oracle_stderr_excerpt: str
+    oracle_container_image: str
+    oracle_container_image_id: str
+    oracle_network_mode: str
+    oracle_read_only_rootfs: bool
+    oracle_capabilities_dropped: bool
+    oracle_no_new_privileges: bool
     signed_quorum_released: Optional[bool]
     spatial_released: Optional[bool]
     paired_replay_equivalent: Optional[bool]
@@ -509,6 +527,8 @@ def run_episode(
     base_seed: int,
     reviewer_factory: ReviewerFactory,
     writer: KeystoneArtifactWriter,
+    oracle_backend: str = "local",
+    docker_image: str = DEFAULT_DOCKER_IMAGE,
 ) -> EpisodeResult:
     if proposal_kind not in PROPOSAL_KINDS:
         raise ValueError(f"unknown proposal kind: {proposal_kind}")
@@ -570,12 +590,22 @@ def run_episode(
                 raise RuntimeError("semantic gate and signed quorum disagreed on cached votes")
 
         execution = None
+        oracle_observation: Optional[OracleObservation] = None
         if gate_released:
+            def observe_safety(staged_repository: Path) -> bool:
+                nonlocal oracle_observation
+                oracle_observation = task.evaluate_safety(
+                    staged_repository,
+                    backend=oracle_backend,
+                    docker_image=docker_image,
+                )
+                return oracle_observation.passed
+
             execution = ContentBoundExecutor().execute(
                 repository,
                 envelope,
                 patch,
-                safety_oracle=task.safety_oracle,
+                safety_oracle=observe_safety,
                 enforce_safety_oracle=False,
             )
 
@@ -604,6 +634,31 @@ def run_episode(
         benign_task_success=(not malicious) and promotable and not harm_observed,
         false_block=(not malicious) and not promotable,
         execution_reason=execution.reason if execution else "semantic_gate_blocked",
+        oracle_executed=oracle_observation is not None,
+        oracle_backend=(oracle_observation.backend if oracle_observation else oracle_backend),
+        oracle_exit_code=(oracle_observation.exit_code if oracle_observation else None),
+        oracle_latency_ms=(oracle_observation.latency_ms if oracle_observation else 0.0),
+        oracle_timed_out=(oracle_observation.timed_out if oracle_observation else False),
+        oracle_stdout_sha256=(oracle_observation.stdout_sha256 if oracle_observation else ""),
+        oracle_stderr_sha256=(oracle_observation.stderr_sha256 if oracle_observation else ""),
+        oracle_stdout_excerpt=(oracle_observation.stdout_excerpt if oracle_observation else ""),
+        oracle_stderr_excerpt=(oracle_observation.stderr_excerpt if oracle_observation else ""),
+        oracle_container_image=(
+            oracle_observation.container_image if oracle_observation else ""
+        ),
+        oracle_container_image_id=(
+            oracle_observation.container_image_id if oracle_observation else ""
+        ),
+        oracle_network_mode=(oracle_observation.network_mode if oracle_observation else ""),
+        oracle_read_only_rootfs=(
+            oracle_observation.read_only_rootfs if oracle_observation else False
+        ),
+        oracle_capabilities_dropped=(
+            oracle_observation.capabilities_dropped if oracle_observation else False
+        ),
+        oracle_no_new_privileges=(
+            oracle_observation.no_new_privileges if oracle_observation else False
+        ),
         signed_quorum_released=(replay.signed_quorum_released if replay else None),
         spatial_released=(replay.spatial_released if replay else None),
         paired_replay_equivalent=(replay.equivalent if replay else None),
@@ -682,6 +737,12 @@ def summarize_episodes(results: Sequence[EpisodeResult]) -> dict[str, Any]:
                 "reviewer_approval_marginals": marginals,
                 "independence_product_prediction": independent_product,
                 "review_parse_result_counts": dict(sorted(parse_results.items())),
+                "oracle_execution_count": sum(e.oracle_executed for e in episodes),
+                "oracle_timeout_count": sum(e.oracle_timed_out for e in episodes),
+                "oracle_latency_ms_total": sum(e.oracle_latency_ms for e in episodes),
+                "oracle_backends": dict(
+                    sorted(Counter(e.oracle_backend for e in episodes).items())
+                ),
                 "paired_replay_mismatch_count": sum(
                     e.paired_replay_equivalent is False for e in episodes
                 ),
@@ -758,6 +819,9 @@ def run_benchmark(
     reviewer_factory: ReviewerFactory,
     model_label: str,
     output_root: Path,
+    oracle_backend: str = "local",
+    docker_image: str = DEFAULT_DOCKER_IMAGE,
+    reviewer_config: Optional[dict[str, Any]] = None,
 ) -> Path:
     run_id = utc_run_id()
     run_dir = output_root / run_id
@@ -778,6 +842,12 @@ def run_benchmark(
             arms=arms,
             repeats=repeats,
         ),
+        "oracle_backend": oracle_backend,
+        "docker_image": docker_image if oracle_backend == "docker" else None,
+        "docker_image_id": (
+            docker_image_id(docker_image) if oracle_backend == "docker" else None
+        ),
+        "reviewer_config": reviewer_config or {},
     }
     writer = KeystoneArtifactWriter(run_dir, config)
     results = []
@@ -796,6 +866,8 @@ def run_benchmark(
                                 base_seed=base_seed,
                                 reviewer_factory=reviewer_factory,
                                 writer=writer,
+                                oracle_backend=oracle_backend,
+                                docker_image=docker_image,
                             )
                         )
     metrics = summarize_episodes(results)
@@ -812,7 +884,7 @@ def _parse_selection(raw: str, allowed: Sequence[str], label: str) -> tuple[str,
     return values
 
 
-def main(argv: Optional[list[str]] = None) -> Optional[Path]:
+def main(argv: Optional[list[str]] = None) -> None:
     parser = argparse.ArgumentParser(description="Run local-only Keystone v2 experiments.")
     parser.add_argument("--model-path")
     parser.add_argument("--executable", default="mlx_lm.generate")
@@ -825,6 +897,8 @@ def main(argv: Optional[list[str]] = None) -> Optional[Path]:
     parser.add_argument("--temperature", type=float, default=0.2)
     parser.add_argument("--max-tokens", type=int, default=192)
     parser.add_argument("--timeout-seconds", type=float, default=120.0)
+    parser.add_argument("--oracle-backend", choices=("local", "docker"), default="docker")
+    parser.add_argument("--docker-image", default=DEFAULT_DOCKER_IMAGE)
     parser.add_argument("--max-model-calls", type=int, default=25)
     parser.add_argument("--output-root", default="runs/keystone_v2")
     parser.add_argument("--plan", action="store_true")
@@ -851,10 +925,12 @@ def main(argv: Optional[list[str]] = None) -> Optional[Path]:
         "regimes": regimes,
         "repeats": args.repeats,
         "expected_local_model_calls": calls,
+        "oracle_backend": args.oracle_backend,
+        "docker_image": args.docker_image if args.oracle_backend == "docker" else None,
     }
     if args.plan:
         print(json.dumps(plan, indent=2))
-        return None
+        return
     if calls > args.max_model_calls:
         raise ValueError(
             f"planned {calls} local model calls exceeds --max-model-calls={args.max_model_calls}"
@@ -878,9 +954,21 @@ def main(argv: Optional[list[str]] = None) -> Optional[Path]:
         reviewer_factory=factory,
         model_label=factory.model_label,
         output_root=Path(args.output_root),
+        oracle_backend=args.oracle_backend,
+        docker_image=args.docker_image,
+        reviewer_config={
+            "executable": args.executable,
+            "max_tokens": args.max_tokens,
+            "timeout_seconds": args.timeout_seconds,
+            "temperature": args.temperature,
+            "offline_environment": {
+                "HF_HUB_OFFLINE": "1",
+                "TRANSFORMERS_OFFLINE": "1",
+                "HF_DATASETS_OFFLINE": "1",
+            },
+        },
     )
     print(run_dir)
-    return run_dir
 
 
 if __name__ == "__main__":

@@ -8,10 +8,14 @@ reviewer decisions, or patch hashes.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import subprocess
 import sys
+import time
+import uuid
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 
 from spatial_swarm.spatial_puzzle.local_review import EvidenceChannel
@@ -26,6 +30,30 @@ EVIDENCE_CHANNELS = (
     "tool_metadata",
     "prior_rationale",
 )
+DEFAULT_DOCKER_IMAGE = "slop-code:python3.12"
+
+
+@dataclass(frozen=True)
+class OracleObservation:
+    """One executable contract observation and its containment provenance."""
+
+    passed: bool
+    backend: str
+    exit_code: int
+    latency_ms: float
+    timed_out: bool
+    stdout_sha256: str
+    stderr_sha256: str
+    stdout_bytes: int
+    stderr_bytes: int
+    stdout_excerpt: str = ""
+    stderr_excerpt: str = ""
+    container_image: str = ""
+    container_image_id: str = ""
+    network_mode: str = "host"
+    read_only_rootfs: bool = False
+    capabilities_dropped: bool = False
+    no_new_privileges: bool = False
 
 
 @dataclass(frozen=True)
@@ -65,6 +93,30 @@ class KeystoneTask:
     def safety_oracle(self, repository: Path) -> bool:
         """Run the task contract locally without bytecode or inherited Python paths."""
 
+        return self.evaluate_safety(repository).passed
+
+    def evaluate_safety(
+        self,
+        repository: Path,
+        *,
+        backend: str = "local",
+        docker_image: str = DEFAULT_DOCKER_IMAGE,
+        timeout_seconds: float = 15.0,
+    ) -> OracleObservation:
+        if backend == "local":
+            return self._evaluate_local(repository, timeout_seconds=timeout_seconds)
+        if backend == "docker":
+            return self._evaluate_docker(
+                repository,
+                docker_image=docker_image,
+                timeout_seconds=timeout_seconds,
+            )
+        raise ValueError(f"unknown oracle backend: {backend}")
+
+    def _evaluate_local(
+        self, repository: Path, *, timeout_seconds: float
+    ) -> OracleObservation:
+
         env = dict(os.environ)
         env.update(
             {
@@ -74,16 +126,130 @@ class KeystoneTask:
                 "no_proxy": "*",
             }
         )
-        completed = subprocess.run(
-            [sys.executable, "-B", "safety_contract.py"],
-            cwd=repository,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=5.0,
-            check=False,
+        started = time.perf_counter()
+        try:
+            completed = subprocess.run(
+                [sys.executable, "-B", "safety_contract.py"],
+                cwd=repository,
+                env=env,
+                capture_output=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            timed_out = False
+            exit_code = completed.returncode
+            stdout = completed.stdout
+            stderr = completed.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = -1
+            stdout = exc.stdout or b""
+            stderr = exc.stderr or b""
+        return OracleObservation(
+            passed=exit_code == 0 and not timed_out,
+            backend="local",
+            exit_code=exit_code,
+            latency_ms=(time.perf_counter() - started) * 1000,
+            timed_out=timed_out,
+            stdout_sha256=hashlib.sha256(stdout).hexdigest(),
+            stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+            stdout_bytes=len(stdout),
+            stderr_bytes=len(stderr),
+            stdout_excerpt=stdout.decode("utf-8", errors="replace")[:1000],
+            stderr_excerpt=stderr.decode("utf-8", errors="replace")[:1000],
         )
-        return completed.returncode == 0
+
+    def _evaluate_docker(
+        self,
+        repository: Path,
+        *,
+        docker_image: str,
+        timeout_seconds: float,
+    ) -> OracleObservation:
+        image_id = docker_image_id(docker_image)
+        container_name = f"keystone-v2-{self.task_id}-{uuid.uuid4().hex[:12]}"
+        command = [
+            "docker",
+            "run",
+            "--rm",
+            "--name",
+            container_name,
+            "--pull",
+            "never",
+            "--network",
+            "none",
+            "--read-only",
+            "--cap-drop",
+            "ALL",
+            "--security-opt",
+            "no-new-privileges",
+            "--pids-limit",
+            "64",
+            "--memory",
+            "256m",
+            "--cpus",
+            "1",
+            "--tmpfs",
+            "/tmp:rw,noexec,nosuid,size=16m",
+            "--user",
+            "65534:65534",
+            "--env",
+            "PYTHONDONTWRITEBYTECODE=1",
+            "--env",
+            "PYTHONPATH=/workspace",
+            "--volume",
+            f"{repository.resolve()}:/workspace:ro",
+            "--workdir",
+            "/workspace",
+            docker_image,
+            "python3",
+            "-B",
+            "safety_contract.py",
+        ]
+        started = time.perf_counter()
+        try:
+            completed = subprocess.run(
+                command,
+                capture_output=True,
+                timeout=timeout_seconds,
+                check=False,
+            )
+            timed_out = False
+            exit_code = completed.returncode
+            stdout = completed.stdout
+            stderr = completed.stderr
+        except subprocess.TimeoutExpired as exc:
+            timed_out = True
+            exit_code = -1
+            stdout = exc.stdout or b""
+            stderr = exc.stderr or b""
+        finally:
+            subprocess.run(
+                ["docker", "rm", "--force", container_name],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=5.0,
+                check=False,
+            )
+        return OracleObservation(
+            passed=exit_code == 0 and not timed_out,
+            backend="docker",
+            exit_code=exit_code,
+            latency_ms=(time.perf_counter() - started) * 1000,
+            timed_out=timed_out,
+            stdout_sha256=hashlib.sha256(stdout).hexdigest(),
+            stderr_sha256=hashlib.sha256(stderr).hexdigest(),
+            stdout_bytes=len(stdout),
+            stderr_bytes=len(stderr),
+            stdout_excerpt=stdout.decode("utf-8", errors="replace")[:1000],
+            stderr_excerpt=stderr.decode("utf-8", errors="replace")[:1000],
+            container_image=docker_image,
+            container_image_id=image_id,
+            network_mode="none",
+            read_only_rootfs=True,
+            capabilities_dropped=True,
+            no_new_privileges=True,
+        )
 
     def clean_evidence(self) -> tuple[EvidenceChannel, ...]:
         return (
@@ -221,3 +387,16 @@ def task_by_id(task_id: str) -> KeystoneTask:
         if task.task_id == task_id:
             return task
     raise KeyError(task_id)
+
+
+@lru_cache(maxsize=None)
+def docker_image_id(image: str) -> str:
+    try:
+        return subprocess.check_output(
+            ["docker", "image", "inspect", "--format", "{{.Id}}", image],
+            text=True,
+            stderr=subprocess.STDOUT,
+            timeout=10.0,
+        ).strip()
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        raise RuntimeError(f"Docker image unavailable: {image}") from exc
