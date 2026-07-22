@@ -53,6 +53,7 @@ every guarantee.
 | 3 | As a runtime **detector**, does a geometric check catch more than a plain commitment tripwire? | Detection was **identical** across nongeometric / geometric-silent / geometric-verbose / decoy on every attack class; both blind to a commitment-opening guess. Geometry's marginal detection advantage = **0**; false-positive delta = **0**. A **verbose** geometric response leaked ~**4.88 bits** (residual → 1); the silent one leaked **0**. A decoy adds *attribution*, not detection. | [spatial_detector](docs/findings_spatial_detector.md) |
 | 4 | Under **partial compromise** (stolen neighbors) + one-shot, does spatial add cost vs a matched **random** second factor? | At A0 (no theft) spatial ≈ random. Under stolen neighbors the spatial residual **collapses** (medium n4k8: 5685 → 351 → 45) while the random factor stays **flat** (independent). One-shot caps per-attempt success at 1/residual; limited retries (strikes=5) convert the collapse into recovery. Verbose leak grew with scale (**4.88 → 12.42 → 14.92 bits**). | [spatial_partial_compromise_stress](docs/findings_spatial_partial_compromise_stress.md) |
 | 5 | Can a generator be built that keeps the target ambiguous under stolen neighbors — beating the old generator? | Yes, by selection: n5k4 A3 residual **3 → 17** (one-shot 0.333 → 0.059), strictly higher than the old pick in **75–85%** of trials. But it **reduces, not closes**, the gap to a matched random factor (random one-shot 0.0088), and it is best-of-pool **selection**, not a designed construction. | [spatial_anti_leak_generator](docs/findings_spatial_anti_leak_generator.md) |
+| 6 | Can a **designed** construction bound the neighbor-theft leak further? | Sparse placement (pieces spread in a public region larger than their union) cut the A0→A3 leak **monotonically** with sparsity ρ: **~5.0 bits (dense) → ~1.2–1.4 bits (ρ≥2.5)**, beating the dense generator in **100%** of paired trials at ρ≥2.5; A3 one-shot gap to random shrank ~30× → ~2.3–3.2×. It **approaches but does not reach** random (floors ~1.3 bits), at the cost of a 2.5–3× larger public region. | [spatial_leakage_bounded](docs/findings_spatial_leakage_bounded.md) |
 
 Supporting/earlier records: [commitment_entropy](docs/findings_commitment_entropy.md),
 [spatial_hardness](docs/findings_spatial_hardness.md) (superseded by #2).
@@ -91,7 +92,8 @@ Not "spatial security." Two things:
    exact residual counts; Clopper-Pearson 95% intervals on every rate; a redaction scanner
    with a planted-secret self-test; and describe-only reporting. This is the reusable,
    defensible artifact — a method for **falsifying** "mechanism X hardens an agent-swarm
-   gate."
+   gate." It is written up as a standalone, reusable protocol in
+   [METHODOLOGY.md](METHODOLOGY.md).
 
 2. **Two substantive measurements** with the mechanism held honest: the partial-compromise
    correlation leak (spatial residual collapses under stolen neighbors while a matched
@@ -120,10 +122,11 @@ Not "spatial security." Two things:
 
 ## Limitations and open questions
 
-- The **anti-leak generator is selection**, not a designed construction; part of its A2
-  lift is a larger A0 starting point, and it does not reach the random ceiling. The one
-  genuinely open technical question: can a *partition scheme* provably bound
-  neighbor-leakage (each piece's complement stays high-entropy under k-neighbor removal)?
+- A **designed** sparse-placement construction (#6) now bounds the neighbor-theft leak
+  *measurably* — cutting it from ~5.0 to ~1.3 bits and beating the dense generator in 100%
+  of trials — but it floors ~1.3 bits (does not reach random) and pays a 2.5–3× larger
+  public region. The remaining open question is a construction with a **proved** (not just
+  measured) neighbor-leakage bound, and whether the ~1.3-bit floor can be pushed lower.
 - Exact enumeration bounds the tiers; sample sizes are modest (large tier n=10), so some
   Clopper-Pearson intervals are wide.
 - The sealed-runtime story is unproven until a real confidential-VM run exists.
