@@ -10,6 +10,10 @@ per-agent secret and is treated as an ablated design point; under the implemente
 adds no cryptographic hardness (see docs/findings_keystone_fair_baseline.md and
 docs/security_model.md).
 
+**Start here: [FINDINGS.md](FINDINGS.md)** — the single honest narrative for the
+spatial-security arc: the question, every experiment in order with measured numbers,
+what is and is not claimed, limitations, and reproduce commands.
+
 The simulator examines one narrow question:
 
 > Under the stated configuration, does an unauthorized or fake agent get a message
