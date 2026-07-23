@@ -8,6 +8,8 @@ from pathlib import Path
 
 from spatial_swarm.spatial_puzzle.experiments import coordinator_challenge_hardening_v1 as CCH
 
+from _env_guards import needs_docker
+
 
 def test_fresh_smaller_challenge_blocks_and_required_agent_ablation_releases():
     guard = CCH.ChallengeGateGuard(min_block_ms=0)
@@ -73,6 +75,7 @@ def test_split_view_and_geometry_bypass_ablations():
     assert no_geometry.released is True
 
 
+@needs_docker
 def test_tiny_cli_run_writes_required_artifacts(tmp_path: Path):
     run_dir = CCH.main(
         [

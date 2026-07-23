@@ -6,6 +6,8 @@ from spatial_swarm.spatial_puzzle.experiments import real_sandbox_gate_v3 as V3
 from spatial_swarm.spatial_puzzle.sandbox.command_policy import evaluate_command
 from spatial_swarm.spatial_puzzle.sandbox.sandbox_spec import SandboxSpec
 
+from _env_guards import needs_docker
+
 
 def test_command_policy_accepts_only_exact_argv():
     spec = SandboxSpec()
@@ -15,6 +17,7 @@ def test_command_policy_accepts_only_exact_argv():
     assert evaluate_command(("python", "x.py;", "cat", ".env"), spec).reason == "command_injection"
 
 
+@needs_docker
 def test_full_gate_blocks_shell_command_but_no_allowlist_releases():
     full = V3.run_attack_case("bash_c", 0, V3.GuardConfig(min_block_ms=0))
     assert full.blocked is True

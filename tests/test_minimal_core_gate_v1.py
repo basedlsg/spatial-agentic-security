@@ -8,6 +8,8 @@ from pathlib import Path
 
 from spatial_swarm.spatial_puzzle.experiments import minimal_core_gate_v1 as MCG
 
+from _env_guards import needs_docker
+
 
 def test_geometry_layer_blocks_auth_attack_and_no_geometry_releases_it():
     full = MCG.run_geometry_attack("fake_agent", 0, MCG.MinimalGuard(min_block_ms=0))
@@ -37,6 +39,7 @@ def test_effect_binding_and_transaction_binding_have_distinct_jobs():
     assert no_tx.transaction_swap_released is True
 
 
+@needs_docker
 def test_boundary_ablations_expose_target_controls():
     cfg = MCG.MinimalGuard(min_block_ms=0)
     assert MCG.run_boundary_attack("shell_command", 0, cfg).blocked is True
@@ -46,6 +49,7 @@ def test_boundary_ablations_expose_target_controls():
     assert MCG.run_ablation_case("no_network_isolation", 0, cfg).unapproved_network_released is True
 
 
+@needs_docker
 def test_tiny_cli_run_writes_digest_and_clean_redaction(tmp_path: Path):
     run_dir = MCG.main(
         [

@@ -2,9 +2,18 @@
 
 from __future__ import annotations
 
+import pytest
+
 from spatial_swarm.spatial_puzzle.experiments import real_sandbox_gate_v3 as V3
 
+# The cases that actually execute containers need a working Docker backend + image.
+_needs_docker = pytest.mark.skipif(
+    not V3._docker_info().get("available", False),
+    reason="requires a working Docker sandbox backend + container image",
+)
 
+
+@_needs_docker
 def test_valid_transaction_releases_and_reordered_transaction_blocks():
     cfg = V3.GuardConfig(min_block_ms=0)
     valid = V3.run_transaction_scenario("valid_read_edit_tests", 0, cfg)

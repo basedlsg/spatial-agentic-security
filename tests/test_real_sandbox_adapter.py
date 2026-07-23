@@ -9,6 +9,11 @@ from pathlib import Path
 from spatial_swarm.spatial_puzzle.experiments import real_sandbox_gate_v3 as V3
 from spatial_swarm.spatial_puzzle.sandbox import ContainerAdapter
 
+from _env_guards import needs_docker
+
+# both cases execute commands inside a real container
+pytestmark = needs_docker
+
 
 def _envelope(raw: V3.RawAction, guard: V3.GuardConfig = V3.GuardConfig()):
     with tempfile.TemporaryDirectory(prefix="v3-test-env-") as tmp:

@@ -30,8 +30,12 @@ from spatial_swarm.spatial_lab.representations import (
 from spatial_swarm.spatial_lab.solvers.base import Budget
 
 # Tier settings: small EXACT (enumerable) and larger SCALING (budgeted).
+# The EXACT tier is asserted reproducible (test_run_is_deterministic_modulo_timestamps),
+# so its wall-clock ceiling is non-binding (the search exhausts in ~ms and the node limit
+# binds first); a tight time limit would trip under full-suite load and make node/found
+# counts non-deterministic without changing the exhaustive result.
 TIERS = {
-    "exact": {"n": 3, "k": 4, "bound": 2, "exact": True, "budget": (3.0, 1_000_000)},
+    "exact": {"n": 3, "k": 4, "bound": 2, "exact": True, "budget": (30.0, 1_000_000)},
     "scaling": {"n": 4, "k": 8, "bound": 2, "exact": False, "budget": (2.5, 800_000)},
 }
 
@@ -155,7 +159,8 @@ def run_experiment(
                     obs = observe(sw.pieces[agent], random.Random(s + 99991), count=1, bound=bound)
                     reg.append(AT.lab_a_registration(sw, agent, obs, bound, budget()))
                     loc.append(AT.lab_a_local(sw, agent, obs, window=1, budget=budget()))
-                    rnd.append(AT.lab_a_random_pose(sw, agent, obs, bound, Budget(0.3, 20_000), seed=s))
+                    # node-bounded (not wall-clock-bounded) so the count is reproducible under load
+                    rnd.append(AT.lab_a_random_pose(sw, agent, obs, bound, Budget(30.0, 20_000), seed=s))
                     nbr.append(AT.lab_a_neighbor_copy(sw, agent, bound, budget()))
                 lab_a[r] = {
                     "registration_exhaustive": _agg(reg),

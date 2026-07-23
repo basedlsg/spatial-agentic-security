@@ -6,6 +6,8 @@ from spatial_swarm.spatial_puzzle.experiments import real_sandbox_gate_v3 as V3
 from spatial_swarm.spatial_puzzle.sandbox.git_guard import git_remote_allowed
 from spatial_swarm.spatial_puzzle.sandbox.sandbox_spec import SandboxSpec
 
+from _env_guards import needs_docker
+
 
 def test_git_guard_allows_only_configured_local_remote():
     spec = SandboxSpec()
@@ -17,6 +19,7 @@ def test_git_guard_allows_only_configured_local_remote():
     )
 
 
+@needs_docker
 def test_git_remote_ablation_pushes_only_to_extra_local_remote():
     full = V3.run_attack_case("remote_swap", 0, V3.GuardConfig(min_block_ms=0))
     assert full.blocked is True
